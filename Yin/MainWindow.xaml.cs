@@ -28,6 +28,9 @@ public partial class MainWindow : Window
         public double MarginLeft { get; set; }
         public double MarginRight { get; set; }
         
+        public bool IsSyncVertical { get; set; } = true; // Default sync top/bottom
+        public bool IsSyncHorizontal { get; set; } = true; // Default sync left/right
+        
         public double Corner { get; set; }
         public double Shadow { get; set; }
         public double Spacing { get; set; }
@@ -76,6 +79,8 @@ public partial class MainWindow : Window
             Spacing = 5,
             Layout = LayoutMode.BrandTop_ExifBottom,
             IsMarginPriority = false,
+            IsSyncVertical = true,
+            IsSyncHorizontal = true,
             ForceLogoPath = null, // Use parsed logic
             LogoOffsetY = 0
         });
@@ -91,6 +96,8 @@ public partial class MainWindow : Window
             Spacing = 5,
             Layout = LayoutMode.BrandTop_ExifBottom,
             IsMarginPriority = true,
+            IsSyncVertical = true,
+            IsSyncHorizontal = true,
             ForceLogoPath = "Source/Hasselblad.png",
             LogoOffsetY = 0
         });
@@ -106,6 +113,8 @@ public partial class MainWindow : Window
             Spacing = 5,
             Layout = LayoutMode.BrandBottom_Centered,
             IsMarginPriority = true,
+            IsSyncVertical = true,
+            IsSyncHorizontal = true,
             ForceLogoPath = "Source/Hasselblad_white.png",
             LogoOffsetY = 0
         });
@@ -121,6 +130,8 @@ public partial class MainWindow : Window
             Spacing = 5,
             Layout = LayoutMode.TwoLines_Bottom_Centered,
             IsMarginPriority = true,
+            IsSyncVertical = false, // Different top/bottom
+            IsSyncHorizontal = true,
             ForceLogoPath = null,
             LogoOffsetY = 0,
             DefaultMake = "SONY",
@@ -143,7 +154,20 @@ public partial class MainWindow : Window
         {
             _currentTemplate = tmpl;
             
-            // Update sliders (will trigger update manually later)
+            // 1. Update Sync Checkboxes FIRST
+            // We need to set these before setting sliders, so that if the new template 
+            // has Sync=False, setting the sliders won't trigger cross-updates.
+            
+            ChkSyncVertical.Checked -= ChkSyncVertical_Checked;
+            ChkSyncHorizontal.Checked -= ChkSyncHorizontal_Checked;
+
+            ChkSyncVertical.IsChecked = tmpl.IsSyncVertical;
+            ChkSyncHorizontal.IsChecked = tmpl.IsSyncHorizontal;
+
+            ChkSyncVertical.Checked += ChkSyncVertical_Checked;
+            ChkSyncHorizontal.Checked += ChkSyncHorizontal_Checked;
+
+            // 2. Update sliders
             SliderScale.Value = tmpl.Scale;
             
             SliderTopMargin.Value = tmpl.MarginTop;
