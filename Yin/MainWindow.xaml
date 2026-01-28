@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Yin"
         mc:Ignorable="d"
-        Title="Watermark Border Generator" Height="600" Width="900"
+        Title="Watermark Border Generator" Height="800" Width="1100"
         WindowStartupLocation="CenterScreen">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -17,84 +17,84 @@
         <Border Grid.Column="0" Background="#F0F0F0" Padding="20">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
-                    <TextBlock Text="Settings" FontSize="20" FontWeight="Bold" Margin="0,0,0,20"/>
+                    <TextBlock Text="设置" FontSize="20" FontWeight="Bold" Margin="0,0,0,20"/>
 
                     <!-- Template Selection -->
-                    <GroupBox Header="Template" Margin="0,0,0,15">
+                    <GroupBox Header="模板" Margin="0,0,0,15">
                         <StackPanel Margin="10">
                             <ComboBox x:Name="CmbTemplates" SelectionChanged="CmbTemplates_SelectionChanged" Height="30"/>
                         </StackPanel>
                     </GroupBox>
 
                     <!-- File Operations -->
-                    <GroupBox Header="File" Margin="0,0,0,15">
+                    <GroupBox Header="文件" Margin="0,0,0,15">
                         <StackPanel Margin="10">
-                            <Button x:Name="BtnOpen" Content="Open Image" Height="30" Click="BtnOpen_Click" Margin="0,0,0,10"/>
-                            <TextBlock Text="Or drag and drop image to the right area" Foreground="Gray" TextWrapping="Wrap" FontSize="11" HorizontalAlignment="Center"/>
+                            <Button x:Name="BtnOpen" Content="打开图片" Height="30" Click="BtnOpen_Click" Margin="0,0,0,10"/>
+                            <TextBlock Text="或将图片拖入右侧区域" Foreground="Gray" TextWrapping="Wrap" FontSize="11" HorizontalAlignment="Center"/>
                         </StackPanel>
                     </GroupBox>
 
                     <!-- Parameters -->
-                    <GroupBox Header="Parameters" Margin="0,0,0,15">
+                    <GroupBox Header="参数设置" Margin="0,0,0,15">
                         <StackPanel Margin="10">
                             
                             <!-- Image Scale -->
-                            <TextBlock Text="Image Scale (%)" Margin="0,5,0,0"/>
+                            <TextBlock Text="图片缩放比例 (%)" Margin="0,5,0,0"/>
                             <DockPanel>
                                 <TextBlock Text="{Binding ElementName=SliderScale, Path=Value, StringFormat=N0}" DockPanel.Dock="Right" Width="30" TextAlignment="Right"/>
                                 <Slider x:Name="SliderScale" Minimum="50" Maximum="95" Value="85" TickFrequency="1" IsSnapToTickEnabled="True"/>
                             </DockPanel>
 
                             <!-- Margin -->
-                            <TextBlock Text="Min Vertical Margin (px)" Margin="0,10,0,0"/>
+                            <TextBlock Text="最小垂直边距 (px)" Margin="0,10,0,0"/>
                             <DockPanel>
                                 <TextBlock Text="{Binding ElementName=SliderMargin, Path=Value, StringFormat=N0}" DockPanel.Dock="Right" Width="30" TextAlignment="Right"/>
                                 <Slider x:Name="SliderMargin" Minimum="0" Maximum="1000" Value="100" TickFrequency="10" IsSnapToTickEnabled="True"/>
                             </DockPanel>
 
-                            <TextBlock Text="Min Horizontal Margin (px)" Margin="0,10,0,0"/>
+                            <TextBlock Text="最小水平边距 (px)" Margin="0,10,0,0"/>
                             <DockPanel>
                                 <TextBlock Text="{Binding ElementName=SliderHMargin, Path=Value, StringFormat=N0}" DockPanel.Dock="Right" Width="30" TextAlignment="Right"/>
                                 <Slider x:Name="SliderHMargin" Minimum="0" Maximum="1000" Value="100" TickFrequency="10" IsSnapToTickEnabled="True"/>
                             </DockPanel>
 
                             <!-- Corner Radius -->
-                            <TextBlock Text="Corner Radius (px)" Margin="0,10,0,0"/>
+                            <TextBlock Text="圆角大小 (px)" Margin="0,10,0,0"/>
                             <DockPanel>
                                 <TextBlock Text="{Binding ElementName=SliderCorner, Path=Value, StringFormat=N0}" DockPanel.Dock="Right" Width="30" TextAlignment="Right"/>
                                 <Slider x:Name="SliderCorner" Minimum="0" Maximum="100" Value="0" TickFrequency="1" IsSnapToTickEnabled="True"/>
                             </DockPanel>
 
                             <!-- Shadow Size -->
-                            <TextBlock Text="Shadow Size (px)" Margin="0,10,0,0"/>
+                            <TextBlock Text="阴影大小 (px)" Margin="0,10,0,0"/>
                             <DockPanel>
                                 <TextBlock Text="{Binding ElementName=SliderShadow, Path=Value, StringFormat=N0}" DockPanel.Dock="Right" Width="30" TextAlignment="Right"/>
                                 <Slider x:Name="SliderShadow" Minimum="0" Maximum="100" Value="20" TickFrequency="1" IsSnapToTickEnabled="True"/>
                             </DockPanel>
 
                              <!-- Text Spacing (Tracking) -->
-                            <TextBlock Text="Text Spacing" Margin="0,10,0,0"/>
+                            <TextBlock Text="文本字间距" Margin="0,10,0,0"/>
                             <DockPanel>
                                 <TextBlock Text="{Binding ElementName=SliderTextSpacing, Path=Value, StringFormat=N0}" DockPanel.Dock="Right" Width="30" TextAlignment="Right"/>
                                 <Slider x:Name="SliderTextSpacing" Minimum="0" Maximum="50" Value="5" TickFrequency="1" IsSnapToTickEnabled="True"/>
                             </DockPanel>
 
                             <!-- Logo Vertical Offset -->
-                            <TextBlock Text="Logo Vertical Offset" Margin="0,10,0,0"/>
+                            <TextBlock Text="Logo 垂直偏移" Margin="0,10,0,0"/>
                             <DockPanel>
                                 <TextBlock Text="{Binding ElementName=SliderLogoOffsetY, Path=Value, StringFormat=N0}" DockPanel.Dock="Right" Width="30" TextAlignment="Right"/>
-                                <Slider x:Name="SliderLogoOffsetY" Minimum="-100" Maximum="100" Value="0" TickFrequency="1" IsSnapToTickEnabled="True"/>
+                                <Slider x:Name="SliderLogoOffsetY" Minimum="-1000" Maximum="1000" Value="0" TickFrequency="10" IsSnapToTickEnabled="True"/>
                             </DockPanel>
 
                             <!-- Options -->
-                            <CheckBox x:Name="ChkMarginPriority" Content="Margin Priority (Ignore Scale)" IsChecked="True" Margin="0,15,0,0"/>
+                            <CheckBox x:Name="ChkMarginPriority" Content="边距优先 (忽略缩放比例)" IsChecked="True" Margin="0,15,0,0"/>
 
-                            <Button x:Name="BtnUpdate" Content="Update Preview" Height="30" Margin="0,20,0,0" Click="BtnUpdate_Click"/>
+                            <Button x:Name="BtnUpdate" Content="更新预览" Height="30" Margin="0,20,0,0" Click="BtnUpdate_Click"/>
 
                         </StackPanel>
                     </GroupBox>
 
-                    <Button x:Name="BtnSave" Content="Save Image" Height="40" Background="#007ACC" Foreground="White" FontSize="14" FontWeight="Bold" Click="BtnSave_Click"/>
+                    <Button x:Name="BtnSave" Content="保存图片" Height="40" Background="#007ACC" Foreground="White" FontSize="14" FontWeight="Bold" Click="BtnSave_Click"/>
                 </StackPanel>
             </ScrollViewer>
         </Border>
@@ -109,7 +109,7 @@
                 
                 <Image x:Name="ImgPreview" Margin="20" Stretch="Uniform"/>
                 
-                <TextBlock Grid.Row="1" x:Name="TxtStatus" Text="Ready" Foreground="White" Margin="10"/>
+                <TextBlock Grid.Row="1" x:Name="TxtStatus" Text="就绪" Foreground="White" Margin="10"/>
             </Grid>
         </Border>
     </Grid>

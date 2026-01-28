@@ -50,7 +50,7 @@ public partial class MainWindow : Window
     {
         _templates.Add(new TemplateModel
         {
-            Name = "Hasselblad Watermark Border",
+            Name = "哈苏水印边框",
             Scale = 85,
             VMargin = 350,
             HMargin = 150,
@@ -65,7 +65,7 @@ public partial class MainWindow : Window
 
         _templates.Add(new TemplateModel
         {
-            Name = "Hasselblad Watermark Centered",
+            Name = "哈苏水印居中",
             Scale = 90,
             VMargin = 20,
             HMargin = 20,
