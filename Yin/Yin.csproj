@@ -12,6 +12,8 @@
       <None Update="Source\Hasselblad.png">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </None>
+        <None Update="Source\Hasselblad_white.png">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
     </ItemGroup>
-
 </Project>

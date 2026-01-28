@@ -27,6 +27,7 @@ public partial class MainWindow : Window
         public LayoutMode Layout { get; set; }
         public bool IsMarginPriority { get; set; } // If true, ignore Scale logic and trust margins strictly
         public string? ForceLogoPath { get; set; } // If set, force use this logo image
+        public double LogoOffsetY { get; set; } // Vertical offset for logo
     }
 
     public enum LayoutMode
@@ -58,7 +59,8 @@ public partial class MainWindow : Window
             Spacing = 5,
             Layout = LayoutMode.BrandTop_ExifBottom,
             IsMarginPriority = true,
-            ForceLogoPath = "Source/Hasselblad.png"
+            ForceLogoPath = "Source/Hasselblad.png",
+            LogoOffsetY = 0
         });
 
         _templates.Add(new TemplateModel
@@ -72,7 +74,8 @@ public partial class MainWindow : Window
             Spacing = 5,
             Layout = LayoutMode.BrandBottom_Centered,
             IsMarginPriority = true,
-            ForceLogoPath = "Source/Hasselblad_white.png"
+            ForceLogoPath = "Source/Hasselblad_white.png",
+            LogoOffsetY = 0
         });
 
         CmbTemplates.ItemsSource = _templates;
@@ -93,6 +96,10 @@ public partial class MainWindow : Window
             SliderCorner.Value = tmpl.Corner;
             SliderShadow.Value = tmpl.Shadow;
             SliderTextSpacing.Value = tmpl.Spacing;
+            SliderLogoOffsetY.Value = tmpl.LogoOffsetY;
+            
+            // Update Options
+            ChkMarginPriority.IsChecked = tmpl.IsMarginPriority;
             
             _currentLayout = tmpl.Layout;
             
@@ -295,6 +302,7 @@ public partial class MainWindow : Window
         double cornerRadius = SliderCorner.Value;
         double shadowSize = SliderShadow.Value;
         double textSpacing = SliderTextSpacing.Value;
+        double logoOffsetY = SliderLogoOffsetY.Value;
 
         // Original Dimensions
         double wImg = _currentImage.PixelWidth;
@@ -309,7 +317,8 @@ public partial class MainWindow : Window
 
         // If Margin Priority is enabled (e.g. Hasselblad template), we ignore Scale calculation for borders
         // and strictly apply the margins to the image size.
-        if (_currentTemplate != null && _currentTemplate.IsMarginPriority)
+        bool isMarginPriority = ChkMarginPriority.IsChecked == true;
+        if (isMarginPriority)
         {
              wBorder = wImg + (minHMargin * 2);
              hBorder = hImg + (minMargin * 2);
@@ -370,11 +379,11 @@ public partial class MainWindow : Window
 
         // To support Shadow properly, it's easier to build a visual tree, arrange it, and then render.
         // Let's switch to that approach as it supports Effects and Layout easier.
-        return RenderUsingVisualTree(wImg, hImg, wBorder, hBorder, scalePercent, minMargin, cornerRadius, shadowSize, textSpacing);
+        return RenderUsingVisualTree(wImg, hImg, wBorder, hBorder, scalePercent, minMargin, cornerRadius, shadowSize, textSpacing, logoOffsetY);
     }
 
     private RenderTargetBitmap RenderUsingVisualTree(double wImg, double hImg, double wBorder, double hBorder, 
-        double scale, double minMargin, double cornerRadius, double shadowSize, double textSpacing)
+        double scale, double minMargin, double cornerRadius, double shadowSize, double textSpacing, double logoOffsetY)
     {
         // Container
         Grid grid = new Grid();
@@ -522,7 +531,7 @@ public partial class MainWindow : Window
             brandElement.VerticalAlignment = VerticalAlignment.Top;
              // Top Margin = (hBorder - hImg) / 2.
             double topSpace = (hBorder - hImg) / 2;
-            brandElement.Margin = new Thickness(0, topSpace * 0.4, 0, 0); 
+            brandElement.Margin = new Thickness(0, (topSpace * 0.4) + logoOffsetY, 0, 0); 
         }
         else // BrandBottom_Centered
         {
@@ -530,7 +539,7 @@ public partial class MainWindow : Window
              // Bottom Margin
              double bottomSpace = (hBorder - hImg) / 2;
              // Center it in the bottom margin space
-             brandElement.Margin = new Thickness(0, 0, 0, bottomSpace * 0.4); 
+             brandElement.Margin = new Thickness(0, 0, 0, (bottomSpace * 0.4) - logoOffsetY); 
         }
         
         grid.Children.Add(brandElement);
