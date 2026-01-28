@@ -5,6 +5,8 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
+using MetadataExtractor;
+using MetadataExtractor.Formats.Exif;
 
 namespace Yin;
 
@@ -48,6 +50,21 @@ public partial class MainWindow : Window
 
     private void InitializeTemplates()
     {
+        _templates.Add(new TemplateModel
+        {
+            Name = "无",
+            Scale = 85,
+            VMargin = 100,
+            HMargin = 0,
+            Corner = 100,
+            Shadow = 20,
+            Spacing = 5,
+            Layout = LayoutMode.BrandTop_ExifBottom,
+            IsMarginPriority = false,
+            ForceLogoPath = null, // Use parsed logic
+            LogoOffsetY = 0
+        });
+
         _templates.Add(new TemplateModel
         {
             Name = "哈苏水印边框",
@@ -186,73 +203,69 @@ public partial class MainWindow : Window
         var info = new ExifInfo();
         try
         {
-            using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            var directories = ImageMetadataReader.ReadMetadata(filePath);
+
+            // 1. Get Make & Model from IFD0
+            var ifd0 = directories.OfType<ExifIfd0Directory>().FirstOrDefault();
+            if (ifd0 != null)
             {
-                var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.OnLoad);
-                if (decoder.Frames.Count > 0 && decoder.Frames[0].Metadata is BitmapMetadata metadata)
+                info.Make = ifd0.GetDescription(ExifIfd0Directory.TagMake) ?? "";
+                info.Model = ifd0.GetDescription(ExifIfd0Directory.TagModel) ?? "";
+            }
+
+            // 2. Get Shooting Info from SubIFD
+            var subIfd = directories.OfType<ExifSubIfdDirectory>().FirstOrDefault();
+            if (subIfd != null)
+            {
+                // Aperture
+                // Try to get formatted string first, if not custom format
+                if (subIfd.TryGetDouble(ExifSubIfdDirectory.TagFNumber, out double f))
                 {
-                    // Helper to get query raw value safely
-                    object? GetQueryRaw(string query)
-                    {
-                        try { return metadata.GetQuery(query); }
-                        catch { return null; }
-                    }
-                    
-                    // Helper to parse rational from potential ulong (packed) or other types
-                    double? GetRational(string query)
-                    {
-                        var val = GetQueryRaw(query);
-                        if (val is ulong u)
-                        {
-                            // WPF packs Rationals into ulong: High 32 bits = Denominator, Low 32 bits = Numerator
-                            uint den = (uint)(u >> 32);
-                            uint num = (uint)(u & 0xFFFFFFFFL);
-                            if (den == 0) return null;
-                            return (double)num / den;
-                        }
-                        if (val is double d) return d;
-                        if (val is decimal dec) return (double)dec;
-                        if (val is string s && double.TryParse(s, out double parsed)) return parsed;
-                        return null;
-                    }
+                    info.FNumber = $"f/{f:0.0}";
+                }
+                else
+                {
+                    info.FNumber = subIfd.GetDescription(ExifSubIfdDirectory.TagFNumber) ?? "";
+                }
 
-                    string GetString(string query)
+                // Shutter Speed
+                // Exposure Time is usually rational.
+                if (subIfd.TryGetRational(ExifSubIfdDirectory.TagExposureTime, out var exposureTime))
+                {
+                    // Convert to fraction for display if < 1
+                    double val = exposureTime.ToDouble();
+                    if (val > 0 && val < 1)
                     {
-                         return GetQueryRaw(query)?.ToString() ?? "";
+                         info.ExposureTime = $"1/{Math.Round(1.0 / val)}";
                     }
-        
-                    info.Make = GetString("/app1/ifd/0/{ushort=271}");
-                    info.Model = GetString("/app1/ifd/0/{ushort=272}");
-                    
-                    // Aperture (FNumber)
-                    var fVal = GetRational("/app1/ifd/exif/{ushort=33437}");
-                    if (fVal.HasValue) info.FNumber = $"f/{fVal.Value:0.0}";
-                    else info.FNumber = "";
-
-                    // Shutter Speed (ExposureTime)
-                    var tVal = GetRational("/app1/ifd/exif/{ushort=33434}");
-                    if (tVal.HasValue)
+                    else
                     {
-                        double t = tVal.Value;
-                        if (t < 1 && t > 0)
-                            info.ExposureTime = $"1/{Math.Round(1/t)}";
-                        else
-                            info.ExposureTime = t.ToString("0.#####"); // Handle long exposure > 1s
+                         info.ExposureTime = val.ToString("0.#####");
                     }
-                    else info.ExposureTime = "";
+                }
+                else
+                {
+                    info.ExposureTime = subIfd.GetDescription(ExifSubIfdDirectory.TagExposureTime)?.Replace(" sec", "") ?? "";
+                }
 
-                    // ISO
-                    info.ISOSpeed = GetString("/app1/ifd/exif/{ushort=34855}");
-        
-                    // Focal Length
-                    var flVal = GetRational("/app1/ifd/exif/{ushort=37386}");
-                    if (flVal.HasValue) info.FocalLength = $"{Math.Round(flVal.Value)}mm"; // Usually integer mm
-                    else info.FocalLength = "";
-        
-                    // Date
-                    string date = GetString("/app1/ifd/exif/{ushort=36867}");
-                    if (DateTime.TryParseExact(date, "yyyy:MM:dd HH:mm:ss", null, System.Globalization.DateTimeStyles.None, out DateTime dt))
-                        info.DateTaken = dt;
+                // ISO
+                info.ISOSpeed = subIfd.GetDescription(ExifSubIfdDirectory.TagIsoEquivalent) ?? 
+                                subIfd.GetDescription(0x8827) ?? ""; // TagIso 0x8827
+
+                // Focal Length
+                if (subIfd.TryGetDouble(ExifSubIfdDirectory.TagFocalLength, out double fl))
+                {
+                    info.FocalLength = $"{fl}mm";
+                }
+                else
+                {
+                    info.FocalLength = subIfd.GetDescription(ExifSubIfdDirectory.TagFocalLength)?.Replace(" ", "") ?? "";
+                }
+
+                // Date
+                if (subIfd.TryGetDateTime(ExifSubIfdDirectory.TagDateTimeOriginal, out DateTime dt))
+                {
+                    info.DateTaken = dt;
                 }
             }
         }
