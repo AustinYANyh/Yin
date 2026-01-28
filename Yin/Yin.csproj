@@ -6,8 +6,13 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <UseWPF>true</UseWPF>
+        <!-- 开启原生单文件发布 -->
         <PublishSingleFile>true</PublishSingleFile>
-        <SelfContained>true</SelfContained>
+        <!-- 关键：不包含运行时，依赖系统已安装的 .NET 8 -->
+        <SelfContained>false</SelfContained>
+        <!-- 包含所有原生库 -->
+        <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+        <!-- 明确目标运行时 -->
         <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     </PropertyGroup>
 
@@ -17,11 +22,6 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Costura.Fody" Version="5.7.0" />
-        <PackageReference Include="Fody" Version="6.8.0">
-            <PrivateAssets>all</PrivateAssets>
-            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-        </PackageReference>
         <PackageReference Include="MetadataExtractor" Version="2.8.1" />
     </ItemGroup>
 </Project>

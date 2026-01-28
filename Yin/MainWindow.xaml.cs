@@ -21,8 +21,13 @@ public partial class MainWindow : Window
     {
         public string Name { get; set; } = "";
         public double Scale { get; set; }
-        public double VMargin { get; set; }
-        public double HMargin { get; set; }
+        
+        // Split margins
+        public double MarginTop { get; set; }
+        public double MarginBottom { get; set; }
+        public double MarginLeft { get; set; }
+        public double MarginRight { get; set; }
+        
         public double Corner { get; set; }
         public double Shadow { get; set; }
         public double Spacing { get; set; }
@@ -30,12 +35,22 @@ public partial class MainWindow : Window
         public bool IsMarginPriority { get; set; } // If true, ignore Scale logic and trust margins strictly
         public string? ForceLogoPath { get; set; } // If set, force use this logo image
         public double LogoOffsetY { get; set; } // Vertical offset for logo
+        
+        // Defaults for this template (if EXIF missing)
+        public string DefaultMake { get; set; } = "";
+        public string DefaultModel { get; set; } = "";
+        public string DefaultLens { get; set; } = "";
+        public string DefaultFocal { get; set; } = "";
+        public string DefaultFNumber { get; set; } = "";
+        public string DefaultShutter { get; set; } = "";
+        public string DefaultISO { get; set; } = "";
     }
 
     public enum LayoutMode
     {
         BrandTop_ExifBottom,
-        BrandBottom_Centered
+        BrandBottom_Centered,
+        TwoLines_Bottom_Centered
     }
 
     private List<TemplateModel> _templates = new List<TemplateModel>();
@@ -54,8 +69,8 @@ public partial class MainWindow : Window
         {
             Name = "无",
             Scale = 85,
-            VMargin = 100,
-            HMargin = 0,
+            MarginTop = 100, MarginBottom = 100,
+            MarginLeft = 0, MarginRight = 0,
             Corner = 100,
             Shadow = 20,
             Spacing = 5,
@@ -69,8 +84,8 @@ public partial class MainWindow : Window
         {
             Name = "哈苏水印边框",
             Scale = 85,
-            VMargin = 350,
-            HMargin = 150,
+            MarginTop = 350, MarginBottom = 350,
+            MarginLeft = 150, MarginRight = 150,
             Corner = 0,
             Shadow = 20,
             Spacing = 5,
@@ -84,8 +99,8 @@ public partial class MainWindow : Window
         {
             Name = "哈苏水印居中",
             Scale = 90,
-            VMargin = 20,
-            HMargin = 20,
+            MarginTop = 20, MarginBottom = 20,
+            MarginLeft = 20, MarginRight = 20,
             Corner = 0,
             Shadow = 20,
             Spacing = 5,
@@ -93,6 +108,28 @@ public partial class MainWindow : Window
             IsMarginPriority = true,
             ForceLogoPath = "Source/Hasselblad_white.png",
             LogoOffsetY = 0
+        });
+
+        _templates.Add(new TemplateModel
+        {
+            Name = "底部两行机身+参数",
+            Scale = 90,
+            MarginTop = 150, MarginBottom = 630, // More space at bottom
+            MarginLeft = 150, MarginRight = 150,
+            Corner = 0,
+            Shadow = 20,
+            Spacing = 5,
+            Layout = LayoutMode.TwoLines_Bottom_Centered,
+            IsMarginPriority = true,
+            ForceLogoPath = null,
+            LogoOffsetY = 0,
+            DefaultMake = "SONY",
+            DefaultModel = "ILCE-7RM5",
+            DefaultLens = "FE 24-70mm GM II",
+            DefaultFocal = "70mm",
+            DefaultFNumber = "f/2.8",
+            DefaultShutter = "1/800",
+            DefaultISO = "100"
         });
 
         CmbTemplates.ItemsSource = _templates;
@@ -108,8 +145,12 @@ public partial class MainWindow : Window
             
             // Update sliders (will trigger update manually later)
             SliderScale.Value = tmpl.Scale;
-            SliderMargin.Value = tmpl.VMargin;
-            SliderHMargin.Value = tmpl.HMargin;
+            
+            SliderTopMargin.Value = tmpl.MarginTop;
+            SliderBottomMargin.Value = tmpl.MarginBottom;
+            SliderLeftMargin.Value = tmpl.MarginLeft;
+            SliderRightMargin.Value = tmpl.MarginRight;
+            
             SliderCorner.Value = tmpl.Corner;
             SliderShadow.Value = tmpl.Shadow;
             SliderTextSpacing.Value = tmpl.Spacing;
@@ -118,6 +159,18 @@ public partial class MainWindow : Window
             // Update Options
             ChkMarginPriority.IsChecked = tmpl.IsMarginPriority;
             
+            // Update Custom Text Defaults (if no Exif loaded, or just pre-fill)
+            // Strategy: We fill the text boxes with Template Defaults.
+            // If Image is loaded, we might override them later or let user see defaults.
+            // Let's just fill defaults.
+            TxtMake.Text = tmpl.DefaultMake;
+            TxtModel.Text = tmpl.DefaultModel;
+            TxtLens.Text = tmpl.DefaultLens;
+            TxtFocal.Text = tmpl.DefaultFocal;
+            TxtFNumber.Text = tmpl.DefaultFNumber;
+            TxtShutter.Text = tmpl.DefaultShutter;
+            TxtISO.Text = tmpl.DefaultISO;
+            
             _currentLayout = tmpl.Layout;
             
             if (_currentImage != null)
@@ -125,6 +178,58 @@ public partial class MainWindow : Window
                 UpdatePreview();
             }
         }
+    }
+    
+    // Slider Sync Logic
+    private void SliderTopMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (ChkSyncVertical?.IsChecked == true && SliderBottomMargin != null)
+        {
+             // Prevent loop if already equal
+             if (Math.Abs(SliderBottomMargin.Value - e.NewValue) > 0.01)
+                SliderBottomMargin.Value = e.NewValue;
+        }
+    }
+
+    private void SliderBottomMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (ChkSyncVertical?.IsChecked == true && SliderTopMargin != null)
+        {
+             if (Math.Abs(SliderTopMargin.Value - e.NewValue) > 0.01)
+                SliderTopMargin.Value = e.NewValue;
+        }
+    }
+    
+    private void ChkSyncVertical_Checked(object sender, RoutedEventArgs e)
+    {
+        // Sync immediately
+        if (SliderBottomMargin != null && SliderTopMargin != null)
+             SliderBottomMargin.Value = SliderTopMargin.Value;
+    }
+
+    private void SliderLeftMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (ChkSyncHorizontal?.IsChecked == true && SliderRightMargin != null)
+        {
+             if (Math.Abs(SliderRightMargin.Value - e.NewValue) > 0.01)
+                SliderRightMargin.Value = e.NewValue;
+        }
+    }
+
+    private void SliderRightMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (ChkSyncHorizontal?.IsChecked == true && SliderLeftMargin != null)
+        {
+             if (Math.Abs(SliderLeftMargin.Value - e.NewValue) > 0.01)
+                SliderLeftMargin.Value = e.NewValue;
+        }
+    }
+    
+    private void ChkSyncHorizontal_Checked(object sender, RoutedEventArgs e)
+    {
+        // Sync immediately
+        if (SliderRightMargin != null && SliderLeftMargin != null)
+             SliderRightMargin.Value = SliderLeftMargin.Value;
     }
     
     // Data class for EXIF
@@ -136,6 +241,7 @@ public partial class MainWindow : Window
         public string FNumber { get; set; } = "";
         public string ExposureTime { get; set; } = "";
         public string ISOSpeed { get; set; } = "";
+        public string LensModel { get; set; } = ""; // New Lens Model
         public DateTime DateTaken { get; set; }
     }
 
@@ -217,6 +323,9 @@ public partial class MainWindow : Window
             var subIfd = directories.OfType<ExifSubIfdDirectory>().FirstOrDefault();
             if (subIfd != null)
             {
+                // Lens Model
+                info.LensModel = subIfd.GetDescription(ExifSubIfdDirectory.TagLensModel) ?? "";
+
                 // Aperture
                 // Try to get formatted string first, if not custom format
                 if (subIfd.TryGetDouble(ExifSubIfdDirectory.TagFNumber, out double f))
@@ -310,8 +419,13 @@ public partial class MainWindow : Window
     {
         // Parameters
         double scalePercent = SliderScale.Value / 100.0;
-        double minMargin = SliderMargin.Value;
-        double minHMargin = SliderHMargin.Value;
+        
+        // Use separate margins
+        double marginTop = SliderTopMargin.Value;
+        double marginBottom = SliderBottomMargin.Value;
+        double marginLeft = SliderLeftMargin.Value;
+        double marginRight = SliderRightMargin.Value;
+        
         double cornerRadius = SliderCorner.Value;
         double shadowSize = SliderShadow.Value;
         double textSpacing = SliderTextSpacing.Value;
@@ -327,14 +441,20 @@ public partial class MainWindow : Window
         // to ensure a uniform look, and then allow Min Margins to expand it.
 
         double wBorder, hBorder;
+        double finalMarginTop, finalMarginBottom, finalMarginLeft, finalMarginRight;
 
         // If Margin Priority is enabled (e.g. Hasselblad template), we ignore Scale calculation for borders
         // and strictly apply the margins to the image size.
         bool isMarginPriority = ChkMarginPriority.IsChecked == true;
         if (isMarginPriority)
         {
-             wBorder = wImg + (minHMargin * 2);
-             hBorder = hImg + (minMargin * 2);
+             finalMarginTop = marginTop;
+             finalMarginBottom = marginBottom;
+             finalMarginLeft = marginLeft;
+             finalMarginRight = marginRight;
+             
+             wBorder = wImg + marginLeft + marginRight;
+             hBorder = hImg + marginTop + marginBottom;
         }
         else
         {
@@ -347,14 +467,15 @@ public partial class MainWindow : Window
             double baseMargin = (hBorderBase - hImg) / 2;
     
             // 2. Apply Min Margins
-            // We use the same baseMargin for both Vertical and Horizontal to start with (Uniform Border)
-            // Then we ensure it's at least minMargin / minHMargin
-            double finalVMargin = Math.Max(baseMargin, minMargin);
-            double finalHMargin = Math.Max(baseMargin, minHMargin);
+            // We ensure it's at least minMargin
+            finalMarginTop = Math.Max(baseMargin, marginTop);
+            finalMarginBottom = Math.Max(baseMargin, marginBottom);
+            finalMarginLeft = Math.Max(baseMargin, marginLeft);
+            finalMarginRight = Math.Max(baseMargin, marginRight);
     
             // 3. Calculate Final Border Dimensions
-            wBorder = wImg + (finalHMargin * 2);
-            hBorder = hImg + (finalVMargin * 2);
+            wBorder = wImg + finalMarginLeft + finalMarginRight;
+            hBorder = hImg + finalMarginTop + finalMarginBottom;
         }
 
         // Create Visual
@@ -367,9 +488,12 @@ public partial class MainWindow : Window
             // 2. Draw Image with Shadow and Rounded Corners
             // We need a separate drawing for the image to apply effects
             
-            // Calculate Image Position (Centered)
-            double xImg = (wBorder - wImg) / 2;
-            double yImg = (hBorder - hImg) / 2;
+            // Calculate Image Position (Respecting Margins)
+            // If margins are uneven (e.g. bottom bigger), image is not centered in border, 
+            // but positioned by Left/Top margin.
+            double xImg = finalMarginLeft;
+            double yImg = finalMarginTop;
+            
             Rect imgRect = new Rect(xImg, yImg, wImg, hImg);
 
             // Clip for rounded corners
@@ -380,23 +504,18 @@ public partial class MainWindow : Window
             dc.DrawImage(_currentImage, imgRect);
             
             dc.Pop(); // Pop Clip
-
-            // Shadow - DrawingContext doesn't support DropShadowEffect directly on primitives easily in one pass.
-            // A common trick is to draw the shadow rectangle first, then the image.
-            // Or better: use a container visual if we were building a tree, but here we are drawing.
-            // For simple drawing context, we can simulate shadow or draw a semi-transparent rectangle.
-            // However, high quality blur shadow is hard with just DrawRectangle.
-            // Let's try to simulate a simple shadow or skip complex blur for performance, 
-            // OR use a separate visual for the image and apply effect, then render that visual into the bitmap.
         }
 
         // To support Shadow properly, it's easier to build a visual tree, arrange it, and then render.
         // Let's switch to that approach as it supports Effects and Layout easier.
-        return RenderUsingVisualTree(wImg, hImg, wBorder, hBorder, scalePercent, minMargin, cornerRadius, shadowSize, textSpacing, logoOffsetY);
+        return RenderUsingVisualTree(wImg, hImg, wBorder, hBorder, scalePercent, 
+            finalMarginTop, finalMarginBottom, finalMarginLeft, finalMarginRight, 
+            cornerRadius, shadowSize, textSpacing, logoOffsetY);
     }
 
     private RenderTargetBitmap RenderUsingVisualTree(double wImg, double hImg, double wBorder, double hBorder, 
-        double scale, double minMargin, double cornerRadius, double shadowSize, double textSpacing, double logoOffsetY)
+        double scale, double marginTop, double marginBottom, double marginLeft, double marginRight, 
+        double cornerRadius, double shadowSize, double textSpacing, double logoOffsetY)
     {
         // Container
         Grid grid = new Grid();
@@ -408,8 +527,10 @@ public partial class MainWindow : Window
         Border imgContainer = new Border();
         imgContainer.Width = wImg;
         imgContainer.Height = hImg;
-        imgContainer.HorizontalAlignment = HorizontalAlignment.Center;
-        imgContainer.VerticalAlignment = VerticalAlignment.Center;
+        // Alignment depends on margins
+        imgContainer.HorizontalAlignment = HorizontalAlignment.Left;
+        imgContainer.VerticalAlignment = VerticalAlignment.Top;
+        imgContainer.Margin = new Thickness(marginLeft, marginTop, marginRight, marginBottom);
         
         // Shadow
         if (shadowSize > 0)
@@ -539,26 +660,104 @@ public partial class MainWindow : Window
         if (_currentLayout == LayoutMode.BrandTop_ExifBottom)
         {
             brandElement.VerticalAlignment = VerticalAlignment.Top;
-             // Top Margin = (hBorder - hImg) / 2.
-            double topSpace = (hBorder - hImg) / 2;
-            brandElement.Margin = new Thickness(0, (topSpace * 0.4) + logoOffsetY, 0, 0); 
+            // Top Margin Space = marginTop
+            brandElement.Margin = new Thickness(0, (marginTop * 0.4) + logoOffsetY, 0, 0); 
+            grid.Children.Add(brandElement);
         }
-        else // BrandBottom_Centered
+        else if (_currentLayout == LayoutMode.BrandBottom_Centered)
         {
              brandElement.VerticalAlignment = VerticalAlignment.Bottom;
-             // Bottom Margin
-             double bottomSpace = (hBorder - hImg) / 2;
-             // Center it in the bottom margin space
-             brandElement.Margin = new Thickness(0, 0, 0, (bottomSpace * 0.4) - logoOffsetY); 
+             // Bottom Margin Space = marginBottom
+             brandElement.Margin = new Thickness(0, 0, 0, (marginBottom * 0.4) - logoOffsetY); 
+             grid.Children.Add(brandElement);
         }
-        
-        grid.Children.Add(brandElement);
+        else if (_currentLayout == LayoutMode.TwoLines_Bottom_Centered)
+        {
+            // Special Layout: Two Lines at Bottom
+            StackPanel spContainer = new StackPanel();
+            spContainer.Orientation = Orientation.Vertical;
+            spContainer.HorizontalAlignment = HorizontalAlignment.Center;
+            spContainer.VerticalAlignment = VerticalAlignment.Bottom;
+            
+            // Use marginBottom
+            spContainer.Margin = new Thickness(0, 0, 0, (marginBottom * 0.3) - logoOffsetY);
+            
+            // --- Line 1: Brand (Bold) + Model (Regular) ---
+            StackPanel spLine1 = new StackPanel();
+            spLine1.Orientation = Orientation.Horizontal;
+            spLine1.HorizontalAlignment = HorizontalAlignment.Center;
+            spLine1.Margin = new Thickness(0, 0, 0, hBorder * 0.005); // Spacing between lines
+
+            double fontSizeL1 = hBorder * 0.022; // Slightly larger
+            
+            // Brand Part
+            // Use Custom Text or Exif
+            string makeStr = !string.IsNullOrWhiteSpace(TxtMake.Text) ? TxtMake.Text : (_currentExif?.Make ?? "CAMERA");
+            TextBlock txtBrand = new TextBlock();
+            txtBrand.Text = makeStr.ToUpper() + " "; 
+            txtBrand.FontFamily = new FontFamily("Arial");
+            txtBrand.FontWeight = FontWeights.Bold;
+            txtBrand.FontSize = fontSizeL1;
+            txtBrand.Foreground = new SolidColorBrush(Color.FromRgb(30, 30, 30)); 
+            
+            // Model Part
+            string modelStr = !string.IsNullOrWhiteSpace(TxtModel.Text) ? TxtModel.Text : (_currentExif?.Model?.Replace("ILCE-", "ILCE-") ?? "");
+            TextBlock txtModel = new TextBlock();
+            txtModel.Text = modelStr; 
+            txtModel.FontFamily = new FontFamily("Arial");
+            txtModel.FontWeight = FontWeights.Normal;
+            txtModel.FontSize = fontSizeL1;
+            txtModel.Foreground = new SolidColorBrush(Color.FromRgb(30, 30, 30));
+
+            spLine1.Children.Add(txtBrand);
+            spLine1.Children.Add(txtModel);
+            
+            // --- Line 2: Lens (if avail) + Params ---
+            string line2Text = "";
+            string lens = !string.IsNullOrWhiteSpace(TxtLens.Text) ? TxtLens.Text : (_currentExif?.LensModel ?? "");
+            string focal = !string.IsNullOrWhiteSpace(TxtFocal.Text) ? TxtFocal.Text : (_currentExif?.FocalLength ?? "");
+            string aperture = !string.IsNullOrWhiteSpace(TxtFNumber.Text) ? TxtFNumber.Text : (_currentExif?.FNumber ?? "");
+            string shutter = !string.IsNullOrWhiteSpace(TxtShutter.Text) ? TxtShutter.Text : (_currentExif?.ExposureTime ?? "");
+            string iso = !string.IsNullOrWhiteSpace(TxtISO.Text) ? TxtISO.Text : (_currentExif?.ISOSpeed ?? "");
+            
+            List<string> parts = new List<string>();
+            if (!string.IsNullOrEmpty(lens)) parts.Add(lens);
+            if (!string.IsNullOrEmpty(focal)) parts.Add(focal);
+            if (!string.IsNullOrEmpty(aperture)) parts.Add(aperture);
+            if (!string.IsNullOrEmpty(shutter)) parts.Add(shutter);
+            if (!string.IsNullOrEmpty(iso) && !iso.StartsWith("ISO")) parts.Add("ISO" + iso);
+            else if (!string.IsNullOrEmpty(iso)) parts.Add(iso);
+
+            line2Text = string.Join("  ", parts);
+
+            TextBlock txtLine2 = new TextBlock();
+            txtLine2.Text = line2Text;
+            txtLine2.FontFamily = new FontFamily("Arial");
+            txtLine2.FontWeight = FontWeights.Normal;
+            txtLine2.FontSize = fontSizeL1 * 0.75; // Smaller than line 1
+            txtLine2.Foreground = new SolidColorBrush(Color.FromRgb(80, 80, 80));
+            txtLine2.HorizontalAlignment = HorizontalAlignment.Center;
+            
+            spContainer.Children.Add(spLine1);
+            spContainer.Children.Add(txtLine2);
+            
+            grid.Children.Add(spContainer);
+        }
 
         // EXIF Label
         // Format: "FL 28mm   Aperture f/2.4   Shutter 1/100   ISO200"
         if (_currentLayout == LayoutMode.BrandTop_ExifBottom && _currentExif != null)
         {
-            string exifText = $"FL {_currentExif.FocalLength}   Aperture {_currentExif.FNumber}   Shutter {_currentExif.ExposureTime}   ISO{_currentExif.ISOSpeed}";
+            // Use Custom Text Logic here too if needed? User mainly asked for Bottom Two Lines template config.
+            // But let's apply it generally for consistency if user enters text.
+            
+            string focal = !string.IsNullOrWhiteSpace(TxtFocal.Text) ? TxtFocal.Text : (_currentExif.FocalLength);
+            string aperture = !string.IsNullOrWhiteSpace(TxtFNumber.Text) ? TxtFNumber.Text : (_currentExif.FNumber);
+            string shutter = !string.IsNullOrWhiteSpace(TxtShutter.Text) ? TxtShutter.Text : (_currentExif.ExposureTime);
+            string iso = !string.IsNullOrWhiteSpace(TxtISO.Text) ? TxtISO.Text : (_currentExif.ISOSpeed);
+            if (!iso.StartsWith("ISO") && !string.IsNullOrEmpty(iso)) iso = "ISO" + iso;
+
+            string exifText = $"FL {focal}   Aperture {aperture}   Shutter {shutter}   {iso}";
             TextBlock txtExif = new TextBlock();
             txtExif.Text = exifText;
             txtExif.FontFamily = new FontFamily("Arial");
@@ -567,8 +766,8 @@ public partial class MainWindow : Window
             txtExif.HorizontalAlignment = HorizontalAlignment.Center;
             txtExif.VerticalAlignment = VerticalAlignment.Bottom;
             
-            double bottomSpace = (hBorder - hImg) / 2;
-            txtExif.Margin = new Thickness(0, 0, 0, bottomSpace * 0.4); 
+            // Use marginBottom
+            txtExif.Margin = new Thickness(0, 0, 0, marginBottom * 0.4); 
             
             grid.Children.Add(txtExif);
         }
