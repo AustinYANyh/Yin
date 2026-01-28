@@ -441,56 +441,53 @@ public partial class MainWindow : Window
         // Check for Force Logo (Template override)
         if (_currentTemplate != null && !string.IsNullOrEmpty(_currentTemplate.ForceLogoPath))
         {
-             string logoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _currentTemplate.ForceLogoPath);
-             if (File.Exists(logoPath))
+             // Use Pack URI for Embedded Resource
+             // Format: pack://application:,,,/AssemblyName;component/Path/To/Resource
+             string resourcePath = $"pack://application:,,,/Yin;component/{_currentTemplate.ForceLogoPath.Replace('\\', '/')}";
+             
+             try 
              {
-                 try 
-                 {
-                     var logo = new BitmapImage();
-                     logo.BeginInit();
-                     logo.UriSource = new Uri(logoPath);
-                     logo.CacheOption = BitmapCacheOption.OnLoad;
-                     logo.EndInit();
-                     
-                     Image imgLogo = new Image();
-                     imgLogo.Source = logo;
-                     imgLogo.Stretch = Stretch.Uniform;
-                     // Set height based on border height
-                     imgLogo.Height = hBorder * 0.025; 
-                     imgLogo.HorizontalAlignment = HorizontalAlignment.Center;
-                     
-                     brandElement = imgLogo;
-                 }
-                 catch { /* Ignore */ }
+                 var logo = new BitmapImage();
+                 logo.BeginInit();
+                 logo.UriSource = new Uri(resourcePath);
+                 logo.CacheOption = BitmapCacheOption.OnLoad;
+                 logo.EndInit();
+                 
+                 Image imgLogo = new Image();
+                 imgLogo.Source = logo;
+                 imgLogo.Stretch = Stretch.Uniform;
+                 // Set height based on border height
+                 imgLogo.Height = hBorder * 0.025; 
+                 imgLogo.HorizontalAlignment = HorizontalAlignment.Center;
+                 
+                 brandElement = imgLogo;
              }
+             catch { /* Ignore */ }
         }
 
         // If no forced logo, check for Brand Text (e.g. Hasselblad) for automatic logo loading
         if (brandElement == null && brandText == "HASSELBLAD") 
         {
-             string logoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Source", "Hasselblad.png");
-             if (File.Exists(logoPath))
+             string resourcePath = "pack://application:,,,/Yin;component/Source/Hasselblad.png";
+             try 
              {
-                 try 
-                 {
-                     // Load Image
-                     var logo = new BitmapImage();
-                     logo.BeginInit();
-                     logo.UriSource = new Uri(logoPath);
-                     logo.CacheOption = BitmapCacheOption.OnLoad;
-                     logo.EndInit();
-                     
-                     Image imgLogo = new Image();
-                     imgLogo.Source = logo;
-                     imgLogo.Stretch = Stretch.Uniform;
-                     // Set height based on border height
-                     imgLogo.Height = hBorder * 0.025; 
-                     imgLogo.HorizontalAlignment = HorizontalAlignment.Center;
-                     
-                     brandElement = imgLogo;
-                 }
-                 catch { /* Ignore error, fall back to text */ }
+                 // Load Image
+                 var logo = new BitmapImage();
+                 logo.BeginInit();
+                 logo.UriSource = new Uri(resourcePath);
+                 logo.CacheOption = BitmapCacheOption.OnLoad;
+                 logo.EndInit();
+                 
+                 Image imgLogo = new Image();
+                 imgLogo.Source = logo;
+                 imgLogo.Stretch = Stretch.Uniform;
+                 // Set height based on border height
+                 imgLogo.Height = hBorder * 0.025; 
+                 imgLogo.HorizontalAlignment = HorizontalAlignment.Center;
+                 
+                 brandElement = imgLogo;
              }
+             catch { /* Ignore error, fall back to text */ }
         }
 
         if (brandElement == null)
