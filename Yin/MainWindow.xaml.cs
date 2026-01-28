@@ -14,11 +14,95 @@ public partial class MainWindow : Window
     private string _currentFilePath = string.Empty;
     private ExifInfo? _currentExif;
 
+    // Template Logic
+    public class TemplateModel
+    {
+        public string Name { get; set; } = "";
+        public double Scale { get; set; }
+        public double VMargin { get; set; }
+        public double HMargin { get; set; }
+        public double Corner { get; set; }
+        public double Shadow { get; set; }
+        public double Spacing { get; set; }
+        public LayoutMode Layout { get; set; }
+        public bool IsMarginPriority { get; set; } // If true, ignore Scale logic and trust margins strictly
+        public string? ForceLogoPath { get; set; } // If set, force use this logo image
+    }
+
+    public enum LayoutMode
+    {
+        BrandTop_ExifBottom,
+        BrandBottom_Centered
+    }
+
+    private List<TemplateModel> _templates = new List<TemplateModel>();
+    private LayoutMode _currentLayout = LayoutMode.BrandTop_ExifBottom;
+    private TemplateModel? _currentTemplate;
+
     public MainWindow()
     {
         InitializeComponent();
+        InitializeTemplates();
     }
 
+    private void InitializeTemplates()
+    {
+        _templates.Add(new TemplateModel
+        {
+            Name = "Hasselblad Watermark Border",
+            Scale = 85,
+            VMargin = 350,
+            HMargin = 150,
+            Corner = 0,
+            Shadow = 20,
+            Spacing = 5,
+            Layout = LayoutMode.BrandTop_ExifBottom,
+            IsMarginPriority = true,
+            ForceLogoPath = "Source/Hasselblad.png"
+        });
+
+        _templates.Add(new TemplateModel
+        {
+            Name = "Hasselblad Watermark Centered",
+            Scale = 90,
+            VMargin = 20,
+            HMargin = 20,
+            Corner = 0,
+            Shadow = 20,
+            Spacing = 5,
+            Layout = LayoutMode.BrandBottom_Centered,
+            IsMarginPriority = true,
+            ForceLogoPath = "Source/Hasselblad_white.png"
+        });
+
+        CmbTemplates.ItemsSource = _templates;
+        CmbTemplates.DisplayMemberPath = "Name";
+        CmbTemplates.SelectedIndex = 0; // Default selection
+    }
+
+    private void CmbTemplates_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CmbTemplates.SelectedItem is TemplateModel tmpl)
+        {
+            _currentTemplate = tmpl;
+            
+            // Update sliders (will trigger update manually later)
+            SliderScale.Value = tmpl.Scale;
+            SliderMargin.Value = tmpl.VMargin;
+            SliderHMargin.Value = tmpl.HMargin;
+            SliderCorner.Value = tmpl.Corner;
+            SliderShadow.Value = tmpl.Shadow;
+            SliderTextSpacing.Value = tmpl.Spacing;
+            
+            _currentLayout = tmpl.Layout;
+            
+            if (_currentImage != null)
+            {
+                UpdatePreview();
+            }
+        }
+    }
+    
     // Data class for EXIF
     public class ExifInfo
     {
@@ -221,21 +305,35 @@ public partial class MainWindow : Window
         // We calculate the border based on the Scale applied to the SHORTER side (or just vertical),
         // to ensure a uniform look, and then allow Min Margins to expand it.
 
-        // 1. Calculate base border thickness based on Scale
-        // hBorderBase = hImg / scale
-        // vBaseMargin = (hBorderBase - hImg) / 2
-        double hBorderBase = hImg / scalePercent;
-        double baseMargin = (hBorderBase - hImg) / 2;
+        double wBorder, hBorder;
 
-        // 2. Apply Min Margins
-        // We use the same baseMargin for both Vertical and Horizontal to start with (Uniform Border)
-        // Then we ensure it's at least minMargin / minHMargin
-        double finalVMargin = Math.Max(baseMargin, minMargin);
-        double finalHMargin = Math.Max(baseMargin, minHMargin);
-
-        // 3. Calculate Final Border Dimensions
-        double wBorder = wImg + (finalHMargin * 2);
-        double hBorder = hImg + (finalVMargin * 2);
+        // If Margin Priority is enabled (e.g. Hasselblad template), we ignore Scale calculation for borders
+        // and strictly apply the margins to the image size.
+        if (_currentTemplate != null && _currentTemplate.IsMarginPriority)
+        {
+             wBorder = wImg + (minHMargin * 2);
+             hBorder = hImg + (minMargin * 2);
+        }
+        else
+        {
+            // Standard Logic: Use Scale to determine base border, then ensure Min Margins
+            
+            // 1. Calculate base border thickness based on Scale
+            // hBorderBase = hImg / scale
+            // vBaseMargin = (hBorderBase - hImg) / 2
+            double hBorderBase = hImg / scalePercent;
+            double baseMargin = (hBorderBase - hImg) / 2;
+    
+            // 2. Apply Min Margins
+            // We use the same baseMargin for both Vertical and Horizontal to start with (Uniform Border)
+            // Then we ensure it's at least minMargin / minHMargin
+            double finalVMargin = Math.Max(baseMargin, minMargin);
+            double finalHMargin = Math.Max(baseMargin, minHMargin);
+    
+            // 3. Calculate Final Border Dimensions
+            wBorder = wImg + (finalHMargin * 2);
+            hBorder = hImg + (finalVMargin * 2);
+        }
 
         // Create Visual
         DrawingVisual visual = new DrawingVisual();
@@ -329,46 +427,117 @@ public partial class MainWindow : Window
         else if (brandText.Contains("FUJI")) brandText = "FUJIFILM";
         else if (brandText.Contains("LEICA")) brandText = "LEICA";
         
-        // Use StackPanel to simulate character spacing since WPF TextBlock doesn't support it directly
-        StackPanel spBrand = new StackPanel();
-        spBrand.Orientation = Orientation.Horizontal;
-        spBrand.HorizontalAlignment = HorizontalAlignment.Center;
-        spBrand.VerticalAlignment = VerticalAlignment.Top;
+        FrameworkElement brandElement = null;
 
-        // Position: Top margin relative to border
-        // Let's place it halfway between top edge and image top.
-        // Top Margin = (hBorder - hImg) / 2.
-        double topSpace = (hBorder - hImg) / 2;
-        spBrand.Margin = new Thickness(0, topSpace * 0.4, 0, 0); // Adjust position
-
-        double fontSize = hBorder * 0.02;
-        FontFamily font = new FontFamily("Arial");
-        FontWeight weight = FontWeights.Bold;
-        Brush brush = Brushes.Black;
-
-        for (int i = 0; i < brandText.Length; i++)
+        // Check for Force Logo (Template override)
+        if (_currentTemplate != null && !string.IsNullOrEmpty(_currentTemplate.ForceLogoPath))
         {
-            TextBlock charBlock = new TextBlock();
-            charBlock.Text = brandText[i].ToString();
-            charBlock.FontFamily = font;
-            charBlock.FontWeight = weight;
-            charBlock.FontSize = fontSize;
-            charBlock.Foreground = brush;
+             string logoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _currentTemplate.ForceLogoPath);
+             if (File.Exists(logoPath))
+             {
+                 try 
+                 {
+                     var logo = new BitmapImage();
+                     logo.BeginInit();
+                     logo.UriSource = new Uri(logoPath);
+                     logo.CacheOption = BitmapCacheOption.OnLoad;
+                     logo.EndInit();
+                     
+                     Image imgLogo = new Image();
+                     imgLogo.Source = logo;
+                     imgLogo.Stretch = Stretch.Uniform;
+                     // Set height based on border height
+                     imgLogo.Height = hBorder * 0.025; 
+                     imgLogo.HorizontalAlignment = HorizontalAlignment.Center;
+                     
+                     brandElement = imgLogo;
+                 }
+                 catch { /* Ignore */ }
+             }
+        }
+
+        // If no forced logo, check for Brand Text (e.g. Hasselblad) for automatic logo loading
+        if (brandElement == null && brandText == "HASSELBLAD") 
+        {
+             string logoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Source", "Hasselblad.png");
+             if (File.Exists(logoPath))
+             {
+                 try 
+                 {
+                     // Load Image
+                     var logo = new BitmapImage();
+                     logo.BeginInit();
+                     logo.UriSource = new Uri(logoPath);
+                     logo.CacheOption = BitmapCacheOption.OnLoad;
+                     logo.EndInit();
+                     
+                     Image imgLogo = new Image();
+                     imgLogo.Source = logo;
+                     imgLogo.Stretch = Stretch.Uniform;
+                     // Set height based on border height
+                     imgLogo.Height = hBorder * 0.025; 
+                     imgLogo.HorizontalAlignment = HorizontalAlignment.Center;
+                     
+                     brandElement = imgLogo;
+                 }
+                 catch { /* Ignore error, fall back to text */ }
+             }
+        }
+
+        if (brandElement == null)
+        {
+            // Use StackPanel to simulate character spacing since WPF TextBlock doesn't support it directly
+            StackPanel spBrand = new StackPanel();
+            spBrand.Orientation = Orientation.Horizontal;
+            spBrand.HorizontalAlignment = HorizontalAlignment.Center;
             
-            // Add spacing to right of character, except the last one
-            if (i < brandText.Length - 1)
+            double fontSize = hBorder * 0.02;
+            FontFamily font = new FontFamily("Arial");
+            FontWeight weight = FontWeights.Bold;
+            Brush brush = Brushes.Black;
+    
+            for (int i = 0; i < brandText.Length; i++)
             {
-                charBlock.Margin = new Thickness(0, 0, textSpacing, 0);
+                TextBlock charBlock = new TextBlock();
+                charBlock.Text = brandText[i].ToString();
+                charBlock.FontFamily = font;
+                charBlock.FontWeight = weight;
+                charBlock.FontSize = fontSize;
+                charBlock.Foreground = brush;
+                
+                // Add spacing to right of character, except the last one
+                if (i < brandText.Length - 1)
+                {
+                    charBlock.Margin = new Thickness(0, 0, textSpacing, 0);
+                }
+                
+                spBrand.Children.Add(charBlock);
             }
-            
-            spBrand.Children.Add(charBlock);
+            brandElement = spBrand;
+        }
+
+        // Layout: Brand Position
+        if (_currentLayout == LayoutMode.BrandTop_ExifBottom)
+        {
+            brandElement.VerticalAlignment = VerticalAlignment.Top;
+             // Top Margin = (hBorder - hImg) / 2.
+            double topSpace = (hBorder - hImg) / 2;
+            brandElement.Margin = new Thickness(0, topSpace * 0.4, 0, 0); 
+        }
+        else // BrandBottom_Centered
+        {
+             brandElement.VerticalAlignment = VerticalAlignment.Bottom;
+             // Bottom Margin
+             double bottomSpace = (hBorder - hImg) / 2;
+             // Center it in the bottom margin space
+             brandElement.Margin = new Thickness(0, 0, 0, bottomSpace * 0.4); 
         }
         
-        grid.Children.Add(spBrand);
+        grid.Children.Add(brandElement);
 
         // EXIF Label
         // Format: "FL 28mm   Aperture f/2.4   Shutter 1/100   ISO200"
-        if (_currentExif != null)
+        if (_currentLayout == LayoutMode.BrandTop_ExifBottom && _currentExif != null)
         {
             string exifText = $"FL {_currentExif.FocalLength}   Aperture {_currentExif.FNumber}   Shutter {_currentExif.ExposureTime}   ISO{_currentExif.ISOSpeed}";
             TextBlock txtExif = new TextBlock();
@@ -378,7 +547,9 @@ public partial class MainWindow : Window
             txtExif.Foreground = new SolidColorBrush(Color.FromRgb(50, 50, 50));
             txtExif.HorizontalAlignment = HorizontalAlignment.Center;
             txtExif.VerticalAlignment = VerticalAlignment.Bottom;
-            txtExif.Margin = new Thickness(0, 0, 0, topSpace * 0.4); // Same distance from bottom
+            
+            double bottomSpace = (hBorder - hImg) / 2;
+            txtExif.Margin = new Thickness(0, 0, 0, bottomSpace * 0.4); 
             
             grid.Children.Add(txtExif);
         }

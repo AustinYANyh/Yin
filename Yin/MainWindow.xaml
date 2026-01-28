@@ -19,6 +19,13 @@
                 <StackPanel>
                     <TextBlock Text="Settings" FontSize="20" FontWeight="Bold" Margin="0,0,0,20"/>
 
+                    <!-- Template Selection -->
+                    <GroupBox Header="Template" Margin="0,0,0,15">
+                        <StackPanel Margin="10">
+                            <ComboBox x:Name="CmbTemplates" SelectionChanged="CmbTemplates_SelectionChanged" Height="30"/>
+                        </StackPanel>
+                    </GroupBox>
+
                     <!-- File Operations -->
                     <GroupBox Header="File" Margin="0,0,0,15">
                         <StackPanel Margin="10">
