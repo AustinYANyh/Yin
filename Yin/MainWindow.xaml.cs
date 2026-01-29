@@ -136,7 +136,7 @@ public partial class MainWindow : Window
             LogoOffsetY = 0,
             DefaultMake = "SONY",
             DefaultModel = "ILCE-7RM5",
-            DefaultLens = "FE 24-70mm GM II",
+            DefaultLens = "FE 70-200mm OSS GM II",
             DefaultFocal = "70mm",
             DefaultFNumber = "f/2.8",
             DefaultShutter = "1/800",
@@ -416,7 +416,7 @@ public partial class MainWindow : Window
             }
         }
         // Fallback for brand if empty
-        if (string.IsNullOrEmpty(info.Make)) info.Make = "CAMERA";
+        if (string.IsNullOrEmpty(info.Make)) info.Make = string.Empty;
 
         return info;
     }
@@ -714,9 +714,19 @@ public partial class MainWindow : Window
 
             double fontSizeL1 = hBorder * 0.022; // Slightly larger
             
+            // Helper: Get value from EXIF first, then Text Box (Default/Custom)
+            string GetValue(string? exifVal, string boxVal)
+            {
+                if (!string.IsNullOrWhiteSpace(exifVal)) return exifVal;
+                return boxVal ?? "";
+            }
+
             // Brand Part
             // Use Custom Text or Exif
-            string makeStr = !string.IsNullOrWhiteSpace(TxtMake.Text) ? TxtMake.Text : (_currentExif?.Make ?? "CAMERA");
+            string makeStr = GetValue(_currentExif?.Make, TxtMake.Text);
+            // Fallback to "CAMERA" if both empty
+            if (string.IsNullOrWhiteSpace(makeStr)) makeStr = "CAMERA";
+            
             TextBlock txtBrand = new TextBlock();
             txtBrand.Text = makeStr.ToUpper() + " "; 
             txtBrand.FontFamily = new FontFamily("Arial");
@@ -725,7 +735,7 @@ public partial class MainWindow : Window
             txtBrand.Foreground = new SolidColorBrush(Color.FromRgb(30, 30, 30)); 
             
             // Model Part
-            string modelStr = !string.IsNullOrWhiteSpace(TxtModel.Text) ? TxtModel.Text : (_currentExif?.Model?.Replace("ILCE-", "ILCE-") ?? "");
+            string modelStr = GetValue(_currentExif?.Model?.Replace("ILCE-", "ILCE-"), TxtModel.Text);
             TextBlock txtModel = new TextBlock();
             txtModel.Text = modelStr; 
             txtModel.FontFamily = new FontFamily("Arial");
@@ -738,11 +748,11 @@ public partial class MainWindow : Window
             
             // --- Line 2: Lens (if avail) + Params ---
             string line2Text = "";
-            string lens = !string.IsNullOrWhiteSpace(TxtLens.Text) ? TxtLens.Text : (_currentExif?.LensModel ?? "");
-            string focal = !string.IsNullOrWhiteSpace(TxtFocal.Text) ? TxtFocal.Text : (_currentExif?.FocalLength ?? "");
-            string aperture = !string.IsNullOrWhiteSpace(TxtFNumber.Text) ? TxtFNumber.Text : (_currentExif?.FNumber ?? "");
-            string shutter = !string.IsNullOrWhiteSpace(TxtShutter.Text) ? TxtShutter.Text : (_currentExif?.ExposureTime ?? "");
-            string iso = !string.IsNullOrWhiteSpace(TxtISO.Text) ? TxtISO.Text : (_currentExif?.ISOSpeed ?? "");
+            string lens = GetValue(_currentExif?.LensModel, TxtLens.Text);
+            string focal = GetValue(_currentExif?.FocalLength, TxtFocal.Text);
+            string aperture = GetValue(_currentExif?.FNumber, TxtFNumber.Text);
+            string shutter = GetValue(_currentExif?.ExposureTime, TxtShutter.Text);
+            string iso = GetValue(_currentExif?.ISOSpeed, TxtISO.Text);
             
             List<string> parts = new List<string>();
             if (!string.IsNullOrEmpty(lens)) parts.Add(lens);
