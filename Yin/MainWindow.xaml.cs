@@ -31,6 +31,8 @@ public partial class MainWindow : Window
         public bool IsSyncVertical { get; set; } = true; // Default sync top/bottom
         public bool IsSyncHorizontal { get; set; } = true; // Default sync left/right
         
+        public bool IsSmartAdaptation { get; set; } = false; // Auto-adjust text color/background based on image content
+
         public double Corner { get; set; }
         public double Shadow { get; set; }
         public double Spacing { get; set; }
@@ -47,6 +49,12 @@ public partial class MainWindow : Window
         public string DefaultFNumber { get; set; } = "";
         public string DefaultShutter { get; set; } = "";
         public string DefaultISO { get; set; } = "";
+        
+        // Resolution Adaptation
+        // If > 0, the margin/shadow/corner values defined above are considered "Reference Values" 
+        // for an image with this Short Edge (pixel count).
+        // Using Short Edge (Min dimension) ensures consistent scaling across different Aspect Ratios (Landscape vs Portrait).
+        public double ReferenceShortEdge { get; set; } = 0; 
     }
 
     public enum LayoutMode
@@ -123,7 +131,7 @@ public partial class MainWindow : Window
         {
             Name = "底部两行机身+参数",
             Scale = 90,
-            MarginTop = 150, MarginBottom = 630, // More space at bottom
+            MarginTop = 150, MarginBottom = 400, // Reduced from 630 to 400 for tighter look
             MarginLeft = 150, MarginRight = 150,
             Corner = 0,
             Shadow = 20,
@@ -132,6 +140,7 @@ public partial class MainWindow : Window
             IsMarginPriority = true,
             IsSyncVertical = false, // Different top/bottom
             IsSyncHorizontal = true,
+            IsSmartAdaptation = true, // Enable Smart Logic by default
             ForceLogoPath = null,
             LogoOffsetY = 0,
             DefaultMake = "SONY",
@@ -140,7 +149,8 @@ public partial class MainWindow : Window
             DefaultFocal = "70mm",
             DefaultFNumber = "f/2.8",
             DefaultShutter = "1/800",
-            DefaultISO = "100"
+            DefaultISO = "100",
+            ReferenceShortEdge = 1800 // Adjusted for Short Edge
         });
 
         CmbTemplates.ItemsSource = _templates;
@@ -148,54 +158,67 @@ public partial class MainWindow : Window
         CmbTemplates.SelectedIndex = 0; // Default selection
     }
 
+    // Apply Template Values to UI, considering Scale if needed
+    private void ApplyTemplateValues(TemplateModel tmpl)
+    {
+        // Calculate Scale Factor if Adaptive
+        double factor = 1.0;
+        if (tmpl.ReferenceShortEdge > 0 && _currentImage != null)
+        {
+             // Use Min Dimension (Short Edge) for stable scaling across aspect ratios
+             double shortEdge = Math.Min(_currentImage.PixelWidth, _currentImage.PixelHeight);
+             factor = shortEdge / tmpl.ReferenceShortEdge;
+             
+             // Sanity check
+             if (factor < 0.1) factor = 0.1;
+             if (factor > 10) factor = 10;
+        }
+
+        // 1. Update Sync Checkboxes FIRST
+        ChkSyncVertical.Checked -= ChkSyncVertical_Checked;
+        ChkSyncHorizontal.Checked -= ChkSyncHorizontal_Checked;
+
+        ChkSyncVertical.IsChecked = tmpl.IsSyncVertical;
+        ChkSyncHorizontal.IsChecked = tmpl.IsSyncHorizontal;
+
+        ChkSyncVertical.Checked += ChkSyncVertical_Checked;
+        ChkSyncHorizontal.Checked += ChkSyncHorizontal_Checked;
+
+        // 2. Update sliders with SCALED values
+        SliderScale.Value = tmpl.Scale;
+        
+        SliderTopMargin.Value = tmpl.MarginTop * factor;
+        SliderBottomMargin.Value = tmpl.MarginBottom * factor;
+        SliderLeftMargin.Value = tmpl.MarginLeft * factor;
+        SliderRightMargin.Value = tmpl.MarginRight * factor;
+        
+        SliderCorner.Value = tmpl.Corner * factor;
+        SliderShadow.Value = tmpl.Shadow * factor;
+        SliderTextSpacing.Value = tmpl.Spacing * factor; // Should spacing scale? Yes usually.
+        SliderLogoOffsetY.Value = tmpl.LogoOffsetY * factor;
+        
+        // Update Options
+        ChkMarginPriority.IsChecked = tmpl.IsMarginPriority;
+        ChkSmartAdaptation.IsChecked = tmpl.IsSmartAdaptation;
+        
+        // Update Custom Text Defaults
+        TxtMake.Text = tmpl.DefaultMake;
+        TxtModel.Text = tmpl.DefaultModel;
+        TxtLens.Text = tmpl.DefaultLens;
+        TxtFocal.Text = tmpl.DefaultFocal;
+        TxtFNumber.Text = tmpl.DefaultFNumber;
+        TxtShutter.Text = tmpl.DefaultShutter;
+        TxtISO.Text = tmpl.DefaultISO;
+        
+        _currentLayout = tmpl.Layout;
+    }
+
     private void CmbTemplates_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (CmbTemplates.SelectedItem is TemplateModel tmpl)
         {
             _currentTemplate = tmpl;
-            
-            // 1. Update Sync Checkboxes FIRST
-            // We need to set these before setting sliders, so that if the new template 
-            // has Sync=False, setting the sliders won't trigger cross-updates.
-            
-            ChkSyncVertical.Checked -= ChkSyncVertical_Checked;
-            ChkSyncHorizontal.Checked -= ChkSyncHorizontal_Checked;
-
-            ChkSyncVertical.IsChecked = tmpl.IsSyncVertical;
-            ChkSyncHorizontal.IsChecked = tmpl.IsSyncHorizontal;
-
-            ChkSyncVertical.Checked += ChkSyncVertical_Checked;
-            ChkSyncHorizontal.Checked += ChkSyncHorizontal_Checked;
-
-            // 2. Update sliders
-            SliderScale.Value = tmpl.Scale;
-            
-            SliderTopMargin.Value = tmpl.MarginTop;
-            SliderBottomMargin.Value = tmpl.MarginBottom;
-            SliderLeftMargin.Value = tmpl.MarginLeft;
-            SliderRightMargin.Value = tmpl.MarginRight;
-            
-            SliderCorner.Value = tmpl.Corner;
-            SliderShadow.Value = tmpl.Shadow;
-            SliderTextSpacing.Value = tmpl.Spacing;
-            SliderLogoOffsetY.Value = tmpl.LogoOffsetY;
-            
-            // Update Options
-            ChkMarginPriority.IsChecked = tmpl.IsMarginPriority;
-            
-            // Update Custom Text Defaults (if no Exif loaded, or just pre-fill)
-            // Strategy: We fill the text boxes with Template Defaults.
-            // If Image is loaded, we might override them later or let user see defaults.
-            // Let's just fill defaults.
-            TxtMake.Text = tmpl.DefaultMake;
-            TxtModel.Text = tmpl.DefaultModel;
-            TxtLens.Text = tmpl.DefaultLens;
-            TxtFocal.Text = tmpl.DefaultFocal;
-            TxtFNumber.Text = tmpl.DefaultFNumber;
-            TxtShutter.Text = tmpl.DefaultShutter;
-            TxtISO.Text = tmpl.DefaultISO;
-            
-            _currentLayout = tmpl.Layout;
+            ApplyTemplateValues(tmpl);
             
             if (_currentImage != null)
             {
@@ -318,6 +341,12 @@ public partial class MainWindow : Window
             _currentImage = bitmap;
             // Pass file path to read metadata reliably
             _currentExif = ReadExifData(path);
+            
+            // Re-apply adaptive template values if needed
+            if (_currentTemplate != null && _currentTemplate.ReferenceShortEdge > 0)
+            {
+                ApplyTemplateValues(_currentTemplate);
+            }
             
             UpdatePreview();
             TxtStatus.Text = $"Loaded: {Path.GetFileName(path)} | {_currentExif.Model}";
@@ -537,6 +566,61 @@ public partial class MainWindow : Window
             cornerRadius, shadowSize, textSpacing, logoOffsetY);
     }
 
+    // --- Image Analysis Helper ---
+    private (double avgLuma, double variance) AnalyzeRegion(BitmapSource source, Rect region)
+    {
+        try
+        {
+            // Crop the region
+            int x = (int)Math.Max(0, region.X);
+            int y = (int)Math.Max(0, region.Y);
+            int w = (int)Math.Min(source.PixelWidth - x, region.Width);
+            int h = (int)Math.Min(source.PixelHeight - y, region.Height);
+
+            if (w <= 0 || h <= 0) return (0, 0);
+
+            CroppedBitmap crop = new CroppedBitmap(source, new Int32Rect(x, y, w, h));
+            
+            // Convert to Gray8 for easier luma calc
+            FormatConvertedBitmap gray = new FormatConvertedBitmap();
+            gray.BeginInit();
+            gray.Source = crop;
+            gray.DestinationFormat = PixelFormats.Gray8;
+            gray.EndInit();
+
+            int stride = w; // 8 bits per pixel
+            byte[] pixels = new byte[h * stride];
+            gray.CopyPixels(pixels, stride, 0);
+
+            // Calculate Mean and Variance
+            // To be faster, we can sample.
+            long sum = 0;
+            long sumSq = 0;
+            int step = 4; // Sample every 4th pixel to speed up
+            int count = 0;
+
+            for (int i = 0; i < pixels.Length; i += step)
+            {
+                int val = pixels[i];
+                sum += val;
+                sumSq += (val * val);
+                count++;
+            }
+
+            if (count == 0) return (0, 0);
+
+            double mean = (double)sum / count;
+            double variance = ((double)sumSq / count) - (mean * mean);
+            
+            // Normalize Luma to 0..1
+            return (mean / 255.0, variance);
+        }
+        catch
+        {
+            return (0.5, 0); // Fail safe
+        }
+    }
+
     private RenderTargetBitmap RenderUsingVisualTree(double wImg, double hImg, double wBorder, double hBorder, 
         double scale, double marginTop, double marginBottom, double marginLeft, double marginRight, 
         double cornerRadius, double shadowSize, double textSpacing, double logoOffsetY)
@@ -697,24 +781,71 @@ public partial class MainWindow : Window
         }
         else if (_currentLayout == LayoutMode.TwoLines_Bottom_Centered)
         {
-            // Special Layout: Two Lines at Bottom
+            // Both use Two Lines logic, but Overlay uses WHITE text.
+            bool isOverlay = false;
+            Brush textBrush = new SolidColorBrush(Color.FromRgb(30, 30, 30));
+            Brush subTextBrush = new SolidColorBrush(Color.FromRgb(80, 80, 80));
+            
+            // --- Smart Adaptation Logic ---
+            bool showSmartPanel = false;
+            
+            if (ChkSmartAdaptation.IsChecked == true && _currentImage is BitmapSource bmp)
+            {
+                // Analyze bottom 15% of image
+                Rect analysisRect = new Rect(0, bmp.PixelHeight * 0.85, bmp.PixelWidth, bmp.PixelHeight * 0.15);
+                var stats = AnalyzeRegion(bmp, analysisRect);
+                
+                // Heuristic: Is text likely overlapping image?
+                // Only if marginBottom is small (< 100) or explicitly Overlay mode (which is removed, but logic remains for compact styles)
+                bool isCompact = (marginBottom < 100); 
+                
+                if (isCompact)
+                {
+                    // 1. Adaptive Color
+                    if (stats.avgLuma < 0.5) // Dark background
+                    {
+                        textBrush = Brushes.White;
+                        subTextBrush = new SolidColorBrush(Color.FromRgb(220, 220, 220));
+                    }
+                    
+                    // 2. Adaptive Panel
+                    if (stats.variance > 2000)
+                    {
+                        showSmartPanel = true;
+                    }
+                }
+            }
+            
             StackPanel spContainer = new StackPanel();
             spContainer.Orientation = Orientation.Vertical;
             spContainer.HorizontalAlignment = HorizontalAlignment.Center;
             spContainer.VerticalAlignment = VerticalAlignment.Bottom;
             
-            // Use marginBottom
-            spContainer.Margin = new Thickness(0, 0, 0, (marginBottom * 0.3) - logoOffsetY);
+            // Smart Panel Container (Grid)
+            Grid panelGrid = new Grid();
+            
+            if (showSmartPanel)
+            {
+                Border panelBg = new Border();
+                panelBg.Background = (textBrush == Brushes.White) ? Brushes.Black : Brushes.White;
+                panelBg.Opacity = 0.3; 
+                panelBg.CornerRadius = new CornerRadius(10);
+                panelBg.Effect = new BlurEffect { Radius = 20 }; 
+                
+                panelGrid.Children.Add(panelBg);
+                spContainer.Margin = new Thickness(20, 10, 20, 10);
+            }
             
             // --- Line 1: Brand (Bold) + Model (Regular) ---
             StackPanel spLine1 = new StackPanel();
             spLine1.Orientation = Orientation.Horizontal;
             spLine1.HorizontalAlignment = HorizontalAlignment.Center;
-            spLine1.Margin = new Thickness(0, 0, 0, hBorder * 0.005); // Spacing between lines
+            spLine1.Margin = new Thickness(0, 0, 0, hBorder * 0.005); 
 
-            double fontSizeL1 = hBorder * 0.022; // Slightly larger
+            double refDim = Math.Min(wBorder, hBorder);
+            double fontSizeL1 = refDim * 0.025; 
             
-            // Helper: Get value from EXIF first, then Text Box (Default/Custom)
+            // Helper
             string GetValue(string? exifVal, string boxVal)
             {
                 if (!string.IsNullOrWhiteSpace(exifVal)) return exifVal;
@@ -722,9 +853,7 @@ public partial class MainWindow : Window
             }
 
             // Brand Part
-            // Use Custom Text or Exif
             string makeStr = GetValue(_currentExif?.Make, TxtMake.Text);
-            // Fallback to "CAMERA" if both empty
             if (string.IsNullOrWhiteSpace(makeStr)) makeStr = "CAMERA";
             
             TextBlock txtBrand = new TextBlock();
@@ -732,7 +861,7 @@ public partial class MainWindow : Window
             txtBrand.FontFamily = new FontFamily("Arial");
             txtBrand.FontWeight = FontWeights.Bold;
             txtBrand.FontSize = fontSizeL1;
-            txtBrand.Foreground = new SolidColorBrush(Color.FromRgb(30, 30, 30)); 
+            txtBrand.Foreground = textBrush; 
             
             // Model Part
             string modelStr = GetValue(_currentExif?.Model?.Replace("ILCE-", "ILCE-"), TxtModel.Text);
@@ -741,13 +870,22 @@ public partial class MainWindow : Window
             txtModel.FontFamily = new FontFamily("Arial");
             txtModel.FontWeight = FontWeights.Normal;
             txtModel.FontSize = fontSizeL1;
-            txtModel.Foreground = new SolidColorBrush(Color.FromRgb(30, 30, 30));
+            txtModel.Foreground = textBrush;
+            
+            if (showSmartPanel)
+            {
+                DropShadowEffect glow = new DropShadowEffect();
+                glow.Color = (textBrush == Brushes.White) ? Colors.Black : Colors.White;
+                glow.BlurRadius = 10;
+                glow.ShadowDepth = 0;
+                glow.Opacity = 0.8;
+                spLine1.Effect = glow;
+            }
 
             spLine1.Children.Add(txtBrand);
             spLine1.Children.Add(txtModel);
             
             // --- Line 2: Lens (if avail) + Params ---
-            string line2Text = "";
             string lens = GetValue(_currentExif?.LensModel, TxtLens.Text);
             string focal = GetValue(_currentExif?.FocalLength, TxtFocal.Text);
             string aperture = GetValue(_currentExif?.FNumber, TxtFNumber.Text);
@@ -762,20 +900,43 @@ public partial class MainWindow : Window
             if (!string.IsNullOrEmpty(iso) && !iso.StartsWith("ISO")) parts.Add("ISO" + iso);
             else if (!string.IsNullOrEmpty(iso)) parts.Add(iso);
 
-            line2Text = string.Join("  ", parts);
+            string line2Text = string.Join("  ", parts);
 
             TextBlock txtLine2 = new TextBlock();
             txtLine2.Text = line2Text;
             txtLine2.FontFamily = new FontFamily("Arial");
             txtLine2.FontWeight = FontWeights.Normal;
-            txtLine2.FontSize = fontSizeL1 * 0.75; // Smaller than line 1
-            txtLine2.Foreground = new SolidColorBrush(Color.FromRgb(80, 80, 80));
+            txtLine2.FontSize = fontSizeL1 * 0.75; 
+            txtLine2.Foreground = subTextBrush;
             txtLine2.HorizontalAlignment = HorizontalAlignment.Center;
+            
+            if (showSmartPanel)
+            {
+                DropShadowEffect glow = new DropShadowEffect();
+                glow.Color = (textBrush == Brushes.White) ? Colors.Black : Colors.White;
+                glow.BlurRadius = 8;
+                glow.ShadowDepth = 0;
+                glow.Opacity = 0.8;
+                txtLine2.Effect = glow;
+            }
             
             spContainer.Children.Add(spLine1);
             spContainer.Children.Add(txtLine2);
             
-            grid.Children.Add(spContainer);
+            if (showSmartPanel)
+            {
+                panelGrid.Children.Add(spContainer);
+                panelGrid.HorizontalAlignment = HorizontalAlignment.Center;
+                panelGrid.VerticalAlignment = VerticalAlignment.Bottom;
+                panelGrid.Margin = new Thickness(0, 0, 0, (marginBottom * 0.3) - logoOffsetY);
+                grid.Children.Add(panelGrid);
+            }
+            else
+            {
+                spContainer.VerticalAlignment = VerticalAlignment.Bottom;
+                spContainer.Margin = new Thickness(0, 0, 0, (marginBottom * 0.3) - logoOffsetY);
+                grid.Children.Add(spContainer);
+            }
         }
 
         // EXIF Label
@@ -795,7 +956,10 @@ public partial class MainWindow : Window
             TextBlock txtExif = new TextBlock();
             txtExif.Text = exifText;
             txtExif.FontFamily = new FontFamily("Arial");
-            txtExif.FontSize = hBorder * 0.015;
+            
+            double refDim = Math.Min(wBorder, hBorder);
+            txtExif.FontSize = refDim * 0.018; // Adjusted (was hBorder * 0.015)
+            
             txtExif.Foreground = new SolidColorBrush(Color.FromRgb(50, 50, 50));
             txtExif.HorizontalAlignment = HorizontalAlignment.Center;
             txtExif.VerticalAlignment = VerticalAlignment.Bottom;

@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Yin"
         mc:Ignorable="d"
-        Title="Watermark Border Generator" Height="800" Width="1100"
+        Title="Watermark Border Generator" Height="1000" Width="1300"
         WindowStartupLocation="CenterScreen">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -108,6 +108,7 @@
 
                             <!-- Options -->
                             <CheckBox x:Name="ChkMarginPriority" Content="边距优先 (忽略缩放比例)" IsChecked="True" Margin="0,15,0,0"/>
+                            <CheckBox x:Name="ChkSmartAdaptation" Content="智能自适应 (自动颜色/背景)" IsChecked="False" Margin="0,10,0,0"/>
 
                             <Button x:Name="BtnUpdate" Content="更新预览" Height="30" Margin="0,20,0,0" Click="BtnUpdate_Click"/>
                             
