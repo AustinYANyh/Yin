@@ -7,6 +7,8 @@ using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
+using System.Text.RegularExpressions;
+using MetadataExtractor.Formats.Xmp;
 
 namespace Yin;
 
@@ -378,7 +380,39 @@ public partial class MainWindow : Window
             {
                 // Lens Model
                 info.LensModel = subIfd.GetDescription(ExifSubIfdDirectory.TagLensModel) ?? "";
-
+                
+                var candidates = new List<(string desc, string name)>();
+                if (!string.IsNullOrWhiteSpace(info.LensModel))
+                    candidates.Add((info.LensModel, "Lens Model"));
+                foreach (var dir in directories)
+                {
+                    foreach (var tag in dir.Tags)
+                    {
+                        var n = tag.Name;
+                        if (n == null) continue;
+                        if (n.IndexOf("Lens", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            var d = tag.Description;
+                            if (!string.IsNullOrWhiteSpace(d))
+                                candidates.Add((d, n));
+                        }
+                    }
+                }
+                // XMP: check common properties like aux:Lens / exifEX:LensModel
+                foreach (var xmp in directories.OfType<XmpDirectory>())
+                {
+                    foreach (var kv in xmp.GetXmpProperties())
+                    {
+                        var key = kv.Key ?? "";
+                        var val = kv.Value ?? "";
+                        if (string.IsNullOrWhiteSpace(val)) continue;
+                        if (key.IndexOf("Lens", StringComparison.OrdinalIgnoreCase) >= 0)
+                            candidates.Add((val, key));
+                    }
+                }
+                if (candidates.Count > 0)
+                    info.LensModel = ChooseBestLensName(candidates);
+                
                 // Aperture
                 // Try to get formatted string first, if not custom format
                 if (subIfd.TryGetDouble(ExifSubIfdDirectory.TagFNumber, out double f))
@@ -448,6 +482,33 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(info.Make)) info.Make = string.Empty;
 
         return info;
+    }
+    
+    private static string ChooseBestLensName(List<(string desc, string name)> candidates)
+    {
+        string best = "";
+        int bestScore = int.MinValue;
+        foreach (var c in candidates)
+        {
+            string d = c.desc;
+            string n = c.name;
+            int s = 0;
+            if (string.Equals(n, "Lens", StringComparison.OrdinalIgnoreCase)) s += 5;
+            if (string.Equals(n, "Lens Model", StringComparison.OrdinalIgnoreCase) || string.Equals(n, "LensModel", StringComparison.OrdinalIgnoreCase)) s += 4;
+            if (n.IndexOf("aux:Lens", StringComparison.OrdinalIgnoreCase) >= 0) s += 6;
+            if (n.IndexOf("exifEX:LensModel", StringComparison.OrdinalIgnoreCase) >= 0) s += 5;
+            if (n.IndexOf("LensType", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("Lens Type", StringComparison.OrdinalIgnoreCase) >= 0) s += 2;
+            if (n.IndexOf("Specification", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("Spec", StringComparison.OrdinalIgnoreCase) >= 0) s -= 4;
+            if (Regex.IsMatch(d, @"^\s*\d{1,3}(\s*-\s*\d{1,3})?\s*mm\s+f/?\s*\d(\.\d+)?\s*$", RegexOptions.IgnoreCase)) s -= 3;
+            var tokens = new[] {"FE","GM","OSS","ZA","NIKKOR","RF","EF","L","APO","DG","DN","ART","XCD","HC","HCD","ZEISS","TAMRON","SIGMA","SAMYANG","VOIGT","SUMMILUX","SUMMICRON","Noct","G-Master","G Master"};
+            foreach (var t in tokens)
+            {
+                if (d.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0) { s += 3; break; }
+            }
+            if (Regex.IsMatch(d, @"[A-Za-z]{2,}")) s += 1;
+            if (s > bestScore) { bestScore = s; best = d; }
+        }
+        return best;
     }
 
     private void BtnUpdate_Click(object sender, RoutedEventArgs e)
