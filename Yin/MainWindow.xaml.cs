@@ -116,8 +116,8 @@ public partial class MainWindow : Window
         {
             Name = "哈苏水印居中",
             Scale = 90,
-            MarginTop = 20, MarginBottom = 20,
-            MarginLeft = 20, MarginRight = 20,
+            MarginTop = 120, MarginBottom = 220,
+            MarginLeft = 120, MarginRight = 120,
             Corner = 0,
             Shadow = 20,
             Spacing = 5,
@@ -125,8 +125,10 @@ public partial class MainWindow : Window
             IsMarginPriority = true,
             IsSyncVertical = true,
             IsSyncHorizontal = true,
+            IsSmartAdaptation = true,
             ForceLogoPath = "Source/Hasselblad_white.png",
-            LogoOffsetY = 0
+            LogoOffsetY = 40,
+            ReferenceShortEdge = 1800
         });
 
         _templates.Add(new TemplateModel
@@ -198,6 +200,26 @@ public partial class MainWindow : Window
         SliderShadow.Value = tmpl.Shadow * factor;
         SliderTextSpacing.Value = tmpl.Spacing * factor; // Should spacing scale? Yes usually.
         SliderLogoOffsetY.Value = tmpl.LogoOffsetY * factor;
+        
+        // Hasselblad Centered: auto margins to match sample (landscape/portrait)
+        if (tmpl.Name == "哈苏水印居中" && _currentImage != null)
+        {
+            double w = _currentImage.PixelWidth;
+            double h = _currentImage.PixelHeight;
+            bool portrait = h > w;
+            
+            double shortEdge = Math.Min(w, h);
+            double edgeF = portrait ? 0.018 : 0.022; // uniform thin border
+            double bottomF = edgeF; // same as other edges in sample
+            
+            SliderTopMargin.Value = shortEdge * edgeF;
+            SliderBottomMargin.Value = shortEdge * bottomF;
+            SliderLeftMargin.Value = shortEdge * edgeF;
+            SliderRightMargin.Value = shortEdge * edgeF;
+            
+            double logoOffsetF = portrait ? 0.035 : 0.030; // raise logo slightly more on portrait
+            SliderLogoOffsetY.Value = shortEdge * logoOffsetF;
+        }
         
         // Update Options
         ChkMarginPriority.IsChecked = tmpl.IsMarginPriority;
@@ -835,9 +857,50 @@ public partial class MainWindow : Window
         }
         else if (_currentLayout == LayoutMode.BrandBottom_Centered)
         {
+             Brush textBrush = Brushes.White; 
+             string logoPath = _currentTemplate?.ForceLogoPath ?? "Source/Hasselblad_white.png";
+
+             if (ChkSmartAdaptation.IsChecked == true && _currentImage is BitmapSource bmp)
+             {
+                 Rect analysisRect = new Rect(0, bmp.PixelHeight * 0.85, bmp.PixelWidth, bmp.PixelHeight * 0.15);
+                 var stats = AnalyzeRegion(bmp, analysisRect);
+                 if (stats.avgLuma > 0.7)
+                 {
+                     textBrush = Brushes.Black;
+                     if (logoPath.Contains("white")) logoPath = logoPath.Replace("white", "black");
+                     else if (!logoPath.Contains("black")) logoPath = "Source/Hasselblad.png"; // Default black
+                 }
+             }
+
              brandElement.VerticalAlignment = VerticalAlignment.Bottom;
-             // Bottom Margin Space = marginBottom
-             brandElement.Margin = new Thickness(0, 0, 0, (marginBottom * 0.4) - logoOffsetY); 
+             if (brandElement is Image && !((BitmapImage)((Image)brandElement).Source).UriSource.OriginalString.Contains(logoPath))
+             {
+                  try 
+                  {
+                      string resourcePath = $"pack://application:,,,/Yin;component/{logoPath}";
+                      var logo = new BitmapImage();
+                      logo.BeginInit();
+                      logo.UriSource = new Uri(resourcePath);
+                      logo.CacheOption = BitmapCacheOption.OnLoad;
+                      logo.EndInit();
+                      ((Image)brandElement).Source = logo;
+                  }
+                  catch {}
+             }
+             else if (brandElement is TextBlock tb) tb.Foreground = textBrush;
+             else if (brandElement is StackPanel sp)
+             {
+                 foreach (var child in sp.Children)
+                 {
+                     if (child is TextBlock ctb) ctb.Foreground = textBrush;
+                 }
+             }
+             brandElement.VerticalAlignment = VerticalAlignment.Bottom;
+             
+             bool portrait = _currentImage.PixelHeight > _currentImage.PixelWidth;
+             double coef = portrait ? 1.6 : 1.3; // place text slightly above border, more on portrait
+             var offset = (marginBottom * coef) + logoOffsetY;
+             brandElement.Margin = new Thickness(0, 0, 0, offset); 
              grid.Children.Add(brandElement);
         }
         else if (_currentLayout == LayoutMode.TwoLines_Bottom_Centered)
@@ -919,7 +982,7 @@ public partial class MainWindow : Window
             
             TextBlock txtBrand = new TextBlock();
             txtBrand.Text = makeStr.ToUpper() + " "; 
-            txtBrand.FontFamily = new FontFamily("Arial");
+            txtBrand.FontFamily = new FontFamily("Bahnschrift");
             txtBrand.FontWeight = FontWeights.Bold;
             txtBrand.FontSize = fontSizeL1;
             txtBrand.Foreground = textBrush; 
@@ -928,7 +991,7 @@ public partial class MainWindow : Window
             string modelStr = GetValue(_currentExif?.Model?.Replace("ILCE-", "ILCE-"), TxtModel.Text);
             TextBlock txtModel = new TextBlock();
             txtModel.Text = modelStr; 
-            txtModel.FontFamily = new FontFamily("Arial");
+            txtModel.FontFamily = new FontFamily("Bahnschrift");
             txtModel.FontWeight = FontWeights.Normal;
             txtModel.FontSize = fontSizeL1;
             txtModel.Foreground = textBrush;
@@ -965,7 +1028,7 @@ public partial class MainWindow : Window
 
             TextBlock txtLine2 = new TextBlock();
             txtLine2.Text = line2Text;
-            txtLine2.FontFamily = new FontFamily("Arial");
+            txtLine2.FontFamily = new FontFamily("Bahnschrift");
             txtLine2.FontWeight = FontWeights.Normal;
             txtLine2.FontSize = fontSizeL1 * 0.75; 
             txtLine2.Foreground = subTextBrush;
