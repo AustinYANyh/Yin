@@ -99,8 +99,8 @@ public partial class MainWindow : Window
         {
             Name = "哈苏水印边框",
             Scale = 85,
-            MarginTop = 350, MarginBottom = 350,
-            MarginLeft = 150, MarginRight = 150,
+            MarginTop = 60, MarginBottom = 80,
+            MarginLeft = 70, MarginRight = 70,
             Corner = 0,
             Shadow = 20,
             Spacing = 5,
@@ -108,8 +108,10 @@ public partial class MainWindow : Window
             IsMarginPriority = true,
             IsSyncVertical = true,
             IsSyncHorizontal = true,
+            IsSmartAdaptation = true,
             ForceLogoPath = "Source/Hasselblad.png",
-            LogoOffsetY = 0
+            LogoOffsetY = 0,
+            ReferenceShortEdge = 1800,
         });
 
         _templates.Add(new TemplateModel
@@ -200,6 +202,26 @@ public partial class MainWindow : Window
         SliderShadow.Value = tmpl.Shadow * factor;
         SliderTextSpacing.Value = tmpl.Spacing * factor; // Should spacing scale? Yes usually.
         SliderLogoOffsetY.Value = tmpl.LogoOffsetY * factor;
+        
+        if (tmpl.Name == "哈苏水印边框" && _currentImage != null)
+        {
+            double wImg = _currentImage.PixelWidth;
+            double hImg = _currentImage.PixelHeight;
+            double wBorderPred = wImg + SliderLeftMargin.Value + SliderRightMargin.Value;
+            double hBorderPred = hImg + SliderTopMargin.Value + SliderBottomMargin.Value;
+            double logoHeight = hBorderPred * 0.025;
+            double topMin = logoHeight * 2.0 + 10;
+            double refDim = Math.Min(wBorderPred, hBorderPred);
+            double paramFont = refDim * 0.018;
+            double bottomMin = paramFont * 2.5 + 10;
+            if (SliderTopMargin.Value < topMin) SliderTopMargin.Value = topMin;
+            if (SliderBottomMargin.Value < bottomMin) SliderBottomMargin.Value = bottomMin;
+            double sideMin = paramFont * 2.0;
+            double lr = Math.Max(Math.Max(SliderLeftMargin.Value, SliderRightMargin.Value), sideMin);
+            SliderLeftMargin.Value = lr;
+            SliderRightMargin.Value = lr;
+        }
+        
         
         // Hasselblad Centered: auto margins to match sample (landscape/portrait)
         if (tmpl.Name == "哈苏水印居中" && _currentImage != null)
@@ -850,10 +872,15 @@ public partial class MainWindow : Window
         // Layout: Brand Position
         if (_currentLayout == LayoutMode.BrandTop_ExifBottom)
         {
-            brandElement.VerticalAlignment = VerticalAlignment.Top;
-            // Top Margin Space = marginTop
-            brandElement.Margin = new Thickness(0, (marginTop * 0.4) + logoOffsetY, 0, 0); 
-            grid.Children.Add(brandElement);
+            Grid topRegion = new Grid();
+            topRegion.VerticalAlignment = VerticalAlignment.Top;
+            topRegion.HorizontalAlignment = HorizontalAlignment.Stretch;
+            topRegion.Height = marginTop;
+            
+            brandElement.HorizontalAlignment = HorizontalAlignment.Center;
+            brandElement.VerticalAlignment = VerticalAlignment.Center;
+            topRegion.Children.Add(brandElement);
+            grid.Children.Add(topRegion);
         }
         else if (_currentLayout == LayoutMode.BrandBottom_Centered)
         {
@@ -1067,9 +1094,6 @@ public partial class MainWindow : Window
         // Format: "FL 28mm   Aperture f/2.4   Shutter 1/100   ISO200"
         if (_currentLayout == LayoutMode.BrandTop_ExifBottom && _currentExif != null)
         {
-            // Use Custom Text Logic here too if needed? User mainly asked for Bottom Two Lines template config.
-            // But let's apply it generally for consistency if user enters text.
-            
             string focal = !string.IsNullOrWhiteSpace(TxtFocal.Text) ? TxtFocal.Text : (_currentExif.FocalLength);
             string aperture = !string.IsNullOrWhiteSpace(TxtFNumber.Text) ? TxtFNumber.Text : (_currentExif.FNumber);
             string shutter = !string.IsNullOrWhiteSpace(TxtShutter.Text) ? TxtShutter.Text : (_currentExif.ExposureTime);
@@ -1077,21 +1101,25 @@ public partial class MainWindow : Window
             if (!iso.StartsWith("ISO") && !string.IsNullOrEmpty(iso)) iso = "ISO" + iso;
 
             string exifText = $"FL {focal}   Aperture {aperture}   Shutter {shutter}   {iso}";
+            
+            Grid bottomRegion = new Grid();
+            bottomRegion.VerticalAlignment = VerticalAlignment.Bottom;
+            bottomRegion.HorizontalAlignment = HorizontalAlignment.Stretch;
+            bottomRegion.Height = marginBottom;
+            
             TextBlock txtExif = new TextBlock();
             txtExif.Text = exifText;
             txtExif.FontFamily = new FontFamily("Arial");
             
             double refDim = Math.Min(wBorder, hBorder);
-            txtExif.FontSize = refDim * 0.018; // Adjusted (was hBorder * 0.015)
+            txtExif.FontSize = refDim * 0.018;
             
             txtExif.Foreground = new SolidColorBrush(Color.FromRgb(50, 50, 50));
             txtExif.HorizontalAlignment = HorizontalAlignment.Center;
-            txtExif.VerticalAlignment = VerticalAlignment.Bottom;
+            txtExif.VerticalAlignment = VerticalAlignment.Center;
             
-            // Use marginBottom
-            txtExif.Margin = new Thickness(0, 0, 0, marginBottom * 0.4); 
-            
-            grid.Children.Add(txtExif);
+            bottomRegion.Children.Add(txtExif);
+            grid.Children.Add(bottomRegion);
         }
 
         // Layout
