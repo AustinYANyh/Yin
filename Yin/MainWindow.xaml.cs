@@ -209,9 +209,11 @@ public partial class MainWindow : Window
             double hImg = _currentImage.PixelHeight;
             double wBorderPred = wImg + SliderLeftMargin.Value + SliderRightMargin.Value;
             double hBorderPred = hImg + SliderTopMargin.Value + SliderBottomMargin.Value;
-            double logoHeight = hBorderPred * 0.025;
-            double topMin = logoHeight * 2.0 + 10;
             double refDim = Math.Min(wBorderPred, hBorderPred);
+            double factorLogo = (tmpl.ReferenceShortEdge > 0) ? refDim / tmpl.ReferenceShortEdge : 1.0;
+            double baseLogoPx = 32;
+            double logoHeight = baseLogoPx * factorLogo;
+            double topMin = logoHeight * 2.0 + 10;
             double paramFont = refDim * 0.018;
             double bottomMin = paramFont * 2.5 + 10;
             if (SliderTopMargin.Value < topMin) SliderTopMargin.Value = topMin;
@@ -805,7 +807,9 @@ public partial class MainWindow : Window
                  imgLogo.Stretch = Stretch.Uniform;
                 if (_currentTemplate?.Name == "哈苏水印边框")
                 {
-                    imgLogo.MaxHeight = marginTop * 0.3;
+                    double refDim = Math.Min(wBorder, hBorder);
+                    double factor = (_currentTemplate.ReferenceShortEdge > 0) ? refDim / _currentTemplate.ReferenceShortEdge : 1.0;
+                    imgLogo.Height = 32 * factor;
                     RenderOptions.SetBitmapScalingMode(imgLogo, BitmapScalingMode.HighQuality);
                 }
                 else
@@ -837,7 +841,9 @@ public partial class MainWindow : Window
                  imgLogo.Stretch = Stretch.Uniform;
                 if (_currentTemplate?.Name == "哈苏水印边框")
                 {
-                    imgLogo.MaxHeight = marginTop * 0.3;
+                    double refDim = Math.Min(wBorder, hBorder);
+                    double factor = (_currentTemplate.ReferenceShortEdge > 0) ? refDim / _currentTemplate.ReferenceShortEdge : 1.0;
+                    imgLogo.Height = 32 * factor;
                     RenderOptions.SetBitmapScalingMode(imgLogo, BitmapScalingMode.HighQuality);
                 }
                 else
