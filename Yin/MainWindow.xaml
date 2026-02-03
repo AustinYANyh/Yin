@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Yin"
         mc:Ignorable="d"
-        Title="Watermark Border Generator" Height="1000" Width="1300"
+        Title="Watermark Border Generator" Height="1050" Width="1300"
         WindowStartupLocation="CenterScreen">
     <Grid>
         <Grid.ColumnDefinitions>

@@ -803,8 +803,15 @@ public partial class MainWindow : Window
                  Image imgLogo = new Image();
                  imgLogo.Source = logo;
                  imgLogo.Stretch = Stretch.Uniform;
-                 // Set height based on border height
-                 imgLogo.Height = hBorder * 0.025; 
+                if (_currentTemplate?.Name == "哈苏水印边框")
+                {
+                    imgLogo.MaxHeight = marginTop * 0.3;
+                    RenderOptions.SetBitmapScalingMode(imgLogo, BitmapScalingMode.HighQuality);
+                }
+                else
+                {
+                    imgLogo.Height = hBorder * 0.025;
+                }
                  imgLogo.HorizontalAlignment = HorizontalAlignment.Center;
                  
                  brandElement = imgLogo;
@@ -828,8 +835,15 @@ public partial class MainWindow : Window
                  Image imgLogo = new Image();
                  imgLogo.Source = logo;
                  imgLogo.Stretch = Stretch.Uniform;
-                 // Set height based on border height
-                 imgLogo.Height = hBorder * 0.025; 
+                if (_currentTemplate?.Name == "哈苏水印边框")
+                {
+                    imgLogo.MaxHeight = marginTop * 0.3;
+                    RenderOptions.SetBitmapScalingMode(imgLogo, BitmapScalingMode.HighQuality);
+                }
+                else
+                {
+                    imgLogo.Height = hBorder * 0.025;
+                }
                  imgLogo.HorizontalAlignment = HorizontalAlignment.Center;
                  
                  brandElement = imgLogo;
