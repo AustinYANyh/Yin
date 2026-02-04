@@ -205,6 +205,8 @@ public partial class MainWindow : Window
         
         if (tmpl.Name == "哈苏水印边框" && _currentImage != null)
         {
+            SliderTopMargin.Value *= 1.5;
+            SliderBottomMargin.Value *= 1.5;
             double wImg = _currentImage.PixelWidth;
             double hImg = _currentImage.PixelHeight;
             double wBorderPred = wImg + SliderLeftMargin.Value + SliderRightMargin.Value;
