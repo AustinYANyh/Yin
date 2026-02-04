@@ -402,7 +402,7 @@ public partial class MainWindow : Window
         SaveFileDialog saveFileDialog = new SaveFileDialog
         {
             Filter = "JPEG Image|*.jpg",
-            FileName = $"Frame_{Path.GetFileNameWithoutExtension(_currentFilePath)}.jpg"
+            FileName = $"Frame_{Path.GetFileNameWithoutExtension(_currentFilePath)}{(_currentTemplate != null ? $"_{_currentTemplate.Name}" : $"_{_currentLayout}")}.jpg"
         };
 
         if (saveFileDialog.ShowDialog() == true)
