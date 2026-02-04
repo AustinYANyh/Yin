@@ -9,6 +9,8 @@ using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
 using System.Text.RegularExpressions;
 using MetadataExtractor.Formats.Xmp;
+using Yin.Models;
+using Yin.Services;
 
 namespace Yin;
 
@@ -18,53 +20,6 @@ public partial class MainWindow : Window
     private string _currentFilePath = string.Empty;
     private ExifInfo? _currentExif;
 
-    // Template Logic
-    public class TemplateModel
-    {
-        public string Name { get; set; } = "";
-        public double Scale { get; set; }
-        
-        // Split margins
-        public double MarginTop { get; set; }
-        public double MarginBottom { get; set; }
-        public double MarginLeft { get; set; }
-        public double MarginRight { get; set; }
-        
-        public bool IsSyncVertical { get; set; } = true; // Default sync top/bottom
-        public bool IsSyncHorizontal { get; set; } = true; // Default sync left/right
-        
-        public bool IsSmartAdaptation { get; set; } = false; // Auto-adjust text color/background based on image content
-
-        public double Corner { get; set; }
-        public double Shadow { get; set; }
-        public double Spacing { get; set; }
-        public LayoutMode Layout { get; set; }
-        public bool IsMarginPriority { get; set; } // If true, ignore Scale logic and trust margins strictly
-        public string? ForceLogoPath { get; set; } // If set, force use this logo image
-        public double LogoOffsetY { get; set; } // Vertical offset for logo
-        
-        // Defaults for this template (if EXIF missing)
-        public string DefaultMake { get; set; } = "";
-        public string DefaultModel { get; set; } = "";
-        public string DefaultLens { get; set; } = "";
-        public string DefaultFocal { get; set; } = "";
-        public string DefaultFNumber { get; set; } = "";
-        public string DefaultShutter { get; set; } = "";
-        public string DefaultISO { get; set; } = "";
-        
-        // Resolution Adaptation
-        // If > 0, the margin/shadow/corner values defined above are considered "Reference Values" 
-        // for an image with this Short Edge (pixel count).
-        // Using Short Edge (Min dimension) ensures consistent scaling across different Aspect Ratios (Landscape vs Portrait).
-        public double ReferenceShortEdge { get; set; } = 0; 
-    }
-
-    public enum LayoutMode
-    {
-        BrandTop_ExifBottom,
-        BrandBottom_Centered,
-        TwoLines_Bottom_Centered
-    }
 
     private List<TemplateModel> _templates = new List<TemplateModel>();
     private LayoutMode _currentLayout = LayoutMode.BrandTop_ExifBottom;
@@ -91,7 +46,7 @@ public partial class MainWindow : Window
             IsMarginPriority = false,
             IsSyncVertical = true,
             IsSyncHorizontal = true,
-            ForceLogoPath = null, // Use parsed logic
+            ForceLogoPath = null, // 使用自动解析逻辑
             LogoOffsetY = 0
         });
 
@@ -137,50 +92,50 @@ public partial class MainWindow : Window
         {
             Name = "底部两行机身+参数",
             Scale = 90,
-            MarginTop = 150, MarginBottom = 400, // Reduced from 630 to 400 for tighter look
+            MarginTop = 150, MarginBottom = 400, // 从 630 调整为 400，外观更紧凑
             MarginLeft = 150, MarginRight = 150,
             Corner = 0,
             Shadow = 20,
             Spacing = 5,
             Layout = LayoutMode.TwoLines_Bottom_Centered,
             IsMarginPriority = true,
-            IsSyncVertical = false, // Different top/bottom
+            IsSyncVertical = false, // 上下边距不同步
             IsSyncHorizontal = true,
-            IsSmartAdaptation = true, // Enable Smart Logic by default
+            IsSmartAdaptation = true, // 默认启用智能自适应
             ForceLogoPath = null,
             LogoOffsetY = 0,
             DefaultMake = "SONY",
             DefaultModel = "ILCE-7RM5",
-            DefaultLens = "FE 70-200mm OSS GM II",
+            DefaultLens = "FE 70-200mm GM OSS II",
             DefaultFocal = "70mm",
             DefaultFNumber = "f/2.8",
             DefaultShutter = "1/800",
             DefaultISO = "100",
-            ReferenceShortEdge = 1800 // Adjusted for Short Edge
+            ReferenceShortEdge = 1800 // 以短边为参考调整
         });
 
         CmbTemplates.ItemsSource = _templates;
         CmbTemplates.DisplayMemberPath = "Name";
-        CmbTemplates.SelectedIndex = 0; // Default selection
+        CmbTemplates.SelectedIndex = 3; // 默认选择
     }
 
-    // Apply Template Values to UI, considering Scale if needed
+    // 应用模板到界面；必要时考虑按参考短边缩放
     private void ApplyTemplateValues(TemplateModel tmpl)
     {
-        // Calculate Scale Factor if Adaptive
+        // 当启用自适应时计算缩放因子
         double factor = 1.0;
         if (tmpl.ReferenceShortEdge > 0 && _currentImage != null)
         {
-             // Use Min Dimension (Short Edge) for stable scaling across aspect ratios
+             // 使用最短边（短边）确保不同宽高比下缩放稳定
              double shortEdge = Math.Min(_currentImage.PixelWidth, _currentImage.PixelHeight);
              factor = shortEdge / tmpl.ReferenceShortEdge;
              
-             // Sanity check
+             // 合理范围校验
              if (factor < 0.1) factor = 0.1;
              if (factor > 10) factor = 10;
         }
 
-        // 1. Update Sync Checkboxes FIRST
+        // 1. 先更新同步复选框状态
         ChkSyncVertical.Checked -= ChkSyncVertical_Checked;
         ChkSyncHorizontal.Checked -= ChkSyncHorizontal_Checked;
 
@@ -190,7 +145,7 @@ public partial class MainWindow : Window
         ChkSyncVertical.Checked += ChkSyncVertical_Checked;
         ChkSyncHorizontal.Checked += ChkSyncHorizontal_Checked;
 
-        // 2. Update sliders with SCALED values
+        // 2. 用缩放后的数值更新滑块
         SliderScale.Value = tmpl.Scale;
         
         SliderTopMargin.Value = tmpl.MarginTop * factor;
@@ -200,7 +155,7 @@ public partial class MainWindow : Window
         
         SliderCorner.Value = tmpl.Corner * factor;
         SliderShadow.Value = tmpl.Shadow * factor;
-        SliderTextSpacing.Value = tmpl.Spacing * factor; // Should spacing scale? Yes usually.
+        SliderTextSpacing.Value = tmpl.Spacing * factor; // 间距通常也需要随缩放调整
         SliderLogoOffsetY.Value = tmpl.LogoOffsetY * factor;
         
         if (tmpl.Name == "哈苏水印边框" && _currentImage != null)
@@ -227,7 +182,7 @@ public partial class MainWindow : Window
         }
         
         
-        // Hasselblad Centered: auto margins to match sample (landscape/portrait)
+        // 哈苏居中：根据样例自动设置边距（横/竖）
         if (tmpl.Name == "哈苏水印居中" && _currentImage != null)
         {
             double w = _currentImage.PixelWidth;
@@ -235,23 +190,23 @@ public partial class MainWindow : Window
             bool portrait = h > w;
             
             double shortEdge = Math.Min(w, h);
-            double edgeF = portrait ? 0.018 : 0.022; // uniform thin border
-            double bottomF = edgeF; // same as other edges in sample
+            double edgeF = portrait ? 0.018 : 0.022; // 统一细边
+            double bottomF = edgeF; // 与其它边一致
             
             SliderTopMargin.Value = shortEdge * edgeF;
             SliderBottomMargin.Value = shortEdge * bottomF;
             SliderLeftMargin.Value = shortEdge * edgeF;
             SliderRightMargin.Value = shortEdge * edgeF;
             
-            double logoOffsetF = portrait ? 0.035 : 0.030; // raise logo slightly more on portrait
+            double logoOffsetF = portrait ? 0.035 : 0.030; // 竖图略微提高 Logo 高度
             SliderLogoOffsetY.Value = shortEdge * logoOffsetF;
         }
         
-        // Update Options
+        // 更新选项
         ChkMarginPriority.IsChecked = tmpl.IsMarginPriority;
         ChkSmartAdaptation.IsChecked = tmpl.IsSmartAdaptation;
         
-        // Update Custom Text Defaults
+        // 更新自定义文本默认值
         TxtMake.Text = tmpl.DefaultMake;
         TxtModel.Text = tmpl.DefaultModel;
         TxtLens.Text = tmpl.DefaultLens;
@@ -277,12 +232,12 @@ public partial class MainWindow : Window
         }
     }
     
-    // Slider Sync Logic
+    // 滑块同步逻辑
     private void SliderTopMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (ChkSyncVertical?.IsChecked == true && SliderBottomMargin != null)
         {
-             // Prevent loop if already equal
+             // 避免相等时的循环触发
              if (Math.Abs(SliderBottomMargin.Value - e.NewValue) > 0.01)
                 SliderBottomMargin.Value = e.NewValue;
         }
@@ -299,7 +254,7 @@ public partial class MainWindow : Window
     
     private void ChkSyncVertical_Checked(object sender, RoutedEventArgs e)
     {
-        // Sync immediately
+        // 立即同步
         if (SliderBottomMargin != null && SliderTopMargin != null)
              SliderBottomMargin.Value = SliderTopMargin.Value;
     }
@@ -324,23 +279,11 @@ public partial class MainWindow : Window
     
     private void ChkSyncHorizontal_Checked(object sender, RoutedEventArgs e)
     {
-        // Sync immediately
+        // 立即同步
         if (SliderRightMargin != null && SliderLeftMargin != null)
              SliderRightMargin.Value = SliderLeftMargin.Value;
     }
     
-    // Data class for EXIF
-    public class ExifInfo
-    {
-        public string Make { get; set; } = "";
-        public string Model { get; set; } = "";
-        public string FocalLength { get; set; } = "";
-        public string FNumber { get; set; } = "";
-        public string ExposureTime { get; set; } = "";
-        public string ISOSpeed { get; set; } = "";
-        public string LensModel { get; set; } = ""; // New Lens Model
-        public DateTime DateTaken { get; set; }
-    }
 
     private void BtnOpen_Click(object sender, RoutedEventArgs e)
     {
@@ -378,21 +321,20 @@ public partial class MainWindow : Window
         {
             _currentFilePath = path;
             
-            // Load image with cache option to keep file unlocked if needed, 
-            // but for simple app OnLoad is fine.
+            // 加载图像（使用 OnLoad 以便文件解锁）
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.UriSource = new Uri(path);
-            bitmap.CacheOption = BitmapCacheOption.OnLoad; // Load into memory
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
             bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat | BitmapCreateOptions.IgnoreColorProfile;
             bitmap.EndInit();
-            bitmap.Freeze(); // Make it cross-thread accessible if needed
+            bitmap.Freeze();
 
             _currentImage = bitmap;
-            // Pass file path to read metadata reliably
-            _currentExif = ReadExifData(path);
+            // 读取 EXIF 元数据
+            _currentExif = ExifService.ReadExifData(path);
             
-            // Re-apply adaptive template values if needed
+            // 按需重新应用自适应模板参数
             if (_currentTemplate != null && _currentTemplate.ReferenceShortEdge > 0)
             {
                 ApplyTemplateValues(_currentTemplate);
@@ -407,157 +349,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private ExifInfo ReadExifData(string filePath)
-    {
-        var info = new ExifInfo();
-        try
-        {
-            var directories = ImageMetadataReader.ReadMetadata(filePath);
-
-            // 1. Get Make & Model from IFD0
-            var ifd0 = directories.OfType<ExifIfd0Directory>().FirstOrDefault();
-            if (ifd0 != null)
-            {
-                info.Make = ifd0.GetDescription(ExifIfd0Directory.TagMake) ?? "";
-                info.Model = ifd0.GetDescription(ExifIfd0Directory.TagModel) ?? "";
-            }
-
-            // 2. Get Shooting Info from SubIFD
-            var subIfd = directories.OfType<ExifSubIfdDirectory>().FirstOrDefault();
-            if (subIfd != null)
-            {
-                // Lens Model
-                info.LensModel = subIfd.GetDescription(ExifSubIfdDirectory.TagLensModel) ?? "";
-                
-                var candidates = new List<(string desc, string name)>();
-                if (!string.IsNullOrWhiteSpace(info.LensModel))
-                    candidates.Add((info.LensModel, "Lens Model"));
-                foreach (var dir in directories)
-                {
-                    foreach (var tag in dir.Tags)
-                    {
-                        var n = tag.Name;
-                        if (n == null) continue;
-                        if (n.IndexOf("Lens", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            var d = tag.Description;
-                            if (!string.IsNullOrWhiteSpace(d))
-                                candidates.Add((d, n));
-                        }
-                    }
-                }
-                // XMP: check common properties like aux:Lens / exifEX:LensModel
-                foreach (var xmp in directories.OfType<XmpDirectory>())
-                {
-                    foreach (var kv in xmp.GetXmpProperties())
-                    {
-                        var key = kv.Key ?? "";
-                        var val = kv.Value ?? "";
-                        if (string.IsNullOrWhiteSpace(val)) continue;
-                        if (key.IndexOf("Lens", StringComparison.OrdinalIgnoreCase) >= 0)
-                            candidates.Add((val, key));
-                    }
-                }
-                if (candidates.Count > 0)
-                    info.LensModel = ChooseBestLensName(candidates);
-                
-                // Aperture
-                // Try to get formatted string first, if not custom format
-                if (subIfd.TryGetDouble(ExifSubIfdDirectory.TagFNumber, out double f))
-                {
-                    info.FNumber = $"f/{f:0.0}";
-                }
-                else
-                {
-                    info.FNumber = subIfd.GetDescription(ExifSubIfdDirectory.TagFNumber) ?? "";
-                }
-
-                // Shutter Speed
-                // Exposure Time is usually rational.
-                if (subIfd.TryGetRational(ExifSubIfdDirectory.TagExposureTime, out var exposureTime))
-                {
-                    // Convert to fraction for display if < 1
-                    double val = exposureTime.ToDouble();
-                    if (val > 0 && val < 1)
-                    {
-                         info.ExposureTime = $"1/{Math.Round(1.0 / val)}";
-                    }
-                    else
-                    {
-                         info.ExposureTime = val.ToString("0.#####");
-                    }
-                }
-                else
-                {
-                    info.ExposureTime = subIfd.GetDescription(ExifSubIfdDirectory.TagExposureTime)?.Replace(" sec", "") ?? "";
-                }
-
-                // ISO
-                info.ISOSpeed = subIfd.GetDescription(ExifSubIfdDirectory.TagIsoEquivalent) ?? 
-                                subIfd.GetDescription(0x8827) ?? ""; // TagIso 0x8827
-
-                // Focal Length
-                if (subIfd.TryGetDouble(ExifSubIfdDirectory.TagFocalLength, out double fl))
-                {
-                    info.FocalLength = $"{fl}mm";
-                }
-                else
-                {
-                    info.FocalLength = subIfd.GetDescription(ExifSubIfdDirectory.TagFocalLength)?.Replace(" ", "") ?? "";
-                }
-
-                // Date
-                if (subIfd.TryGetDateTime(ExifSubIfdDirectory.TagDateTimeOriginal, out DateTime dt))
-                {
-                    info.DateTaken = dt;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Metadata read error: {ex.Message}");
-        }
-        
-        // Clean up Model if it contains Make
-        if (!string.IsNullOrEmpty(info.Make) && !string.IsNullOrEmpty(info.Model))
-        {
-            if (info.Model.StartsWith(info.Make, StringComparison.OrdinalIgnoreCase))
-            {
-                info.Model = info.Model.Substring(info.Make.Length).Trim();
-            }
-        }
-        // Fallback for brand if empty
-        if (string.IsNullOrEmpty(info.Make)) info.Make = string.Empty;
-
-        return info;
-    }
     
-    private static string ChooseBestLensName(List<(string desc, string name)> candidates)
-    {
-        string best = "";
-        int bestScore = int.MinValue;
-        foreach (var c in candidates)
-        {
-            string d = c.desc;
-            string n = c.name;
-            int s = 0;
-            if (string.Equals(n, "Lens", StringComparison.OrdinalIgnoreCase)) s += 5;
-            if (string.Equals(n, "Lens Model", StringComparison.OrdinalIgnoreCase) || string.Equals(n, "LensModel", StringComparison.OrdinalIgnoreCase)) s += 4;
-            if (n.IndexOf("aux:Lens", StringComparison.OrdinalIgnoreCase) >= 0) s += 6;
-            if (n.IndexOf("exifEX:LensModel", StringComparison.OrdinalIgnoreCase) >= 0) s += 5;
-            if (n.IndexOf("LensType", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("Lens Type", StringComparison.OrdinalIgnoreCase) >= 0) s += 2;
-            if (n.IndexOf("Specification", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("Spec", StringComparison.OrdinalIgnoreCase) >= 0) s -= 4;
-            if (Regex.IsMatch(d, @"^\s*\d{1,3}(\s*-\s*\d{1,3})?\s*mm\s+f/?\s*\d(\.\d+)?\s*$", RegexOptions.IgnoreCase)) s -= 3;
-            var tokens = new[] {"FE","GM","OSS","ZA","NIKKOR","RF","EF","L","APO","DG","DN","ART","XCD","HC","HCD","ZEISS","TAMRON","SIGMA","SAMYANG","VOIGT","SUMMILUX","SUMMICRON","Noct","G-Master","G Master"};
-            foreach (var t in tokens)
-            {
-                if (d.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0) { s += 3; break; }
-            }
-            if (Regex.IsMatch(d, @"[A-Za-z]{2,}")) s += 1;
-            if (s > bestScore) { bestScore = s; best = d; }
-        }
-        return best;
-    }
 
     private void BtnUpdate_Click(object sender, RoutedEventArgs e)
     {
@@ -570,590 +362,38 @@ public partial class MainWindow : Window
     private void UpdatePreview()
     {
         if (_currentImage == null) return;
-
-        // Debounce logic could be added here if performance is slow, 
-        // but for a single image, immediate update is usually fine.
-        var finalImage = RenderFinalImage();
+        // 若性能较慢可考虑加入防抖，但单张渲染通常即时更新即可
+        var ctx = new RenderContext
+        {
+            CurrentImage = _currentImage,
+            Exif = _currentExif,
+            Template = _currentTemplate,
+            Layout = _currentLayout,
+            IsMarginPriority = ChkMarginPriority.IsChecked == true,
+            IsSmartAdaptation = ChkSmartAdaptation.IsChecked == true,
+            ScalePercent = SliderScale.Value,
+            MarginTop = SliderTopMargin.Value,
+            MarginBottom = SliderBottomMargin.Value,
+            MarginLeft = SliderLeftMargin.Value,
+            MarginRight = SliderRightMargin.Value,
+            CornerRadius = SliderCorner.Value,
+            ShadowSize = SliderShadow.Value,
+            TextSpacing = SliderTextSpacing.Value,
+            LogoOffsetY = SliderLogoOffsetY.Value,
+            TxtMake = TxtMake.Text,
+            TxtModel = TxtModel.Text,
+            TxtLens = TxtLens.Text,
+            TxtFocal = TxtFocal.Text,
+            TxtFNumber = TxtFNumber.Text,
+            TxtShutter = TxtShutter.Text,
+            TxtISO = TxtISO.Text
+        };
+        var finalImage = RenderingService.RenderFinalImage(ctx);
         ImgPreview.Source = finalImage;
     }
 
-    private RenderTargetBitmap RenderFinalImage()
-    {
-        // Parameters
-        double scalePercent = SliderScale.Value / 100.0;
-        
-        // Use separate margins
-        double marginTop = SliderTopMargin.Value;
-        double marginBottom = SliderBottomMargin.Value;
-        double marginLeft = SliderLeftMargin.Value;
-        double marginRight = SliderRightMargin.Value;
-        
-        double cornerRadius = SliderCorner.Value;
-        double shadowSize = SliderShadow.Value;
-        double textSpacing = SliderTextSpacing.Value;
-        double logoOffsetY = SliderLogoOffsetY.Value;
 
-        // Original Dimensions
-        double wImg = _currentImage.PixelWidth;
-        double hImg = _currentImage.PixelHeight;
 
-        // Calculate Border Dimensions
-        // New Logic: Scale determines the "Thickness" of the border uniformly
-        // We calculate the border based on the Scale applied to the SHORTER side (or just vertical),
-        // to ensure a uniform look, and then allow Min Margins to expand it.
-
-        double wBorder, hBorder;
-        double finalMarginTop, finalMarginBottom, finalMarginLeft, finalMarginRight;
-
-        // If Margin Priority is enabled (e.g. Hasselblad template), we ignore Scale calculation for borders
-        // and strictly apply the margins to the image size.
-        bool isMarginPriority = ChkMarginPriority.IsChecked == true;
-        if (isMarginPriority)
-        {
-             finalMarginTop = marginTop;
-             finalMarginBottom = marginBottom;
-             finalMarginLeft = marginLeft;
-             finalMarginRight = marginRight;
-             
-             wBorder = wImg + marginLeft + marginRight;
-             hBorder = hImg + marginTop + marginBottom;
-        }
-        else
-        {
-            // Standard Logic: Use Scale to determine base border, then ensure Min Margins
-            
-            // 1. Calculate base border thickness based on Scale
-            // hBorderBase = hImg / scale
-            // vBaseMargin = (hBorderBase - hImg) / 2
-            double hBorderBase = hImg / scalePercent;
-            double baseMargin = (hBorderBase - hImg) / 2;
-    
-            // 2. Apply Min Margins
-            // We ensure it's at least minMargin
-            finalMarginTop = Math.Max(baseMargin, marginTop);
-            finalMarginBottom = Math.Max(baseMargin, marginBottom);
-            finalMarginLeft = Math.Max(baseMargin, marginLeft);
-            finalMarginRight = Math.Max(baseMargin, marginRight);
-    
-            // 3. Calculate Final Border Dimensions
-            wBorder = wImg + finalMarginLeft + finalMarginRight;
-            hBorder = hImg + finalMarginTop + finalMarginBottom;
-        }
-
-        // Create Visual
-        DrawingVisual visual = new DrawingVisual();
-        using (DrawingContext dc = visual.RenderOpen())
-        {
-            // 1. Draw Background (White)
-            dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, wBorder, hBorder));
-
-            // 2. Draw Image with Shadow and Rounded Corners
-            // We need a separate drawing for the image to apply effects
-            
-            // Calculate Image Position (Respecting Margins)
-            // If margins are uneven (e.g. bottom bigger), image is not centered in border, 
-            // but positioned by Left/Top margin.
-            double xImg = finalMarginLeft;
-            double yImg = finalMarginTop;
-            
-            Rect imgRect = new Rect(xImg, yImg, wImg, hImg);
-
-            // Clip for rounded corners
-            Geometry clipGeom = new RectangleGeometry(imgRect, cornerRadius, cornerRadius);
-            dc.PushClip(clipGeom);
-
-            // Draw Image
-            dc.DrawImage(_currentImage, imgRect);
-            
-            dc.Pop(); // Pop Clip
-        }
-
-        // To support Shadow properly, it's easier to build a visual tree, arrange it, and then render.
-        // Let's switch to that approach as it supports Effects and Layout easier.
-        return RenderUsingVisualTree(wImg, hImg, wBorder, hBorder, scalePercent, 
-            finalMarginTop, finalMarginBottom, finalMarginLeft, finalMarginRight, 
-            cornerRadius, shadowSize, textSpacing, logoOffsetY);
-    }
-
-    // --- Image Analysis Helper ---
-    private (double avgLuma, double variance) AnalyzeRegion(BitmapSource source, Rect region)
-    {
-        try
-        {
-            // Crop the region
-            int x = (int)Math.Max(0, region.X);
-            int y = (int)Math.Max(0, region.Y);
-            int w = (int)Math.Min(source.PixelWidth - x, region.Width);
-            int h = (int)Math.Min(source.PixelHeight - y, region.Height);
-
-            if (w <= 0 || h <= 0) return (0, 0);
-
-            CroppedBitmap crop = new CroppedBitmap(source, new Int32Rect(x, y, w, h));
-            
-            // Convert to Gray8 for easier luma calc
-            FormatConvertedBitmap gray = new FormatConvertedBitmap();
-            gray.BeginInit();
-            gray.Source = crop;
-            gray.DestinationFormat = PixelFormats.Gray8;
-            gray.EndInit();
-
-            int stride = w; // 8 bits per pixel
-            byte[] pixels = new byte[h * stride];
-            gray.CopyPixels(pixels, stride, 0);
-
-            // Calculate Mean and Variance
-            // To be faster, we can sample.
-            long sum = 0;
-            long sumSq = 0;
-            int step = 4; // Sample every 4th pixel to speed up
-            int count = 0;
-
-            for (int i = 0; i < pixels.Length; i += step)
-            {
-                int val = pixels[i];
-                sum += val;
-                sumSq += (val * val);
-                count++;
-            }
-
-            if (count == 0) return (0, 0);
-
-            double mean = (double)sum / count;
-            double variance = ((double)sumSq / count) - (mean * mean);
-            
-            // Normalize Luma to 0..1
-            return (mean / 255.0, variance);
-        }
-        catch
-        {
-            return (0.5, 0); // Fail safe
-        }
-    }
-
-    private RenderTargetBitmap RenderUsingVisualTree(double wImg, double hImg, double wBorder, double hBorder, 
-        double scale, double marginTop, double marginBottom, double marginLeft, double marginRight, 
-        double cornerRadius, double shadowSize, double textSpacing, double logoOffsetY)
-    {
-        // Container
-        Grid grid = new Grid();
-        grid.Width = wBorder;
-        grid.Height = hBorder;
-        grid.Background = Brushes.White;
-
-        // Image Container (for Shadow and Corner)
-        Border imgContainer = new Border();
-        imgContainer.Width = wImg;
-        imgContainer.Height = hImg;
-        // Alignment depends on margins
-        imgContainer.HorizontalAlignment = HorizontalAlignment.Left;
-        imgContainer.VerticalAlignment = VerticalAlignment.Top;
-        imgContainer.Margin = new Thickness(marginLeft, marginTop, marginRight, marginBottom);
-        
-        // Shadow
-        if (shadowSize > 0)
-        {
-            imgContainer.Effect = new DropShadowEffect
-            {
-                Color = Colors.Black,
-                Direction = 315,
-                ShadowDepth = shadowSize / 2, // Approximate depth
-                BlurRadius = shadowSize,
-                Opacity = 0.4
-            };
-        }
-
-        // Image with Corner Radius
-        // To clip an Image in WPF, we can use an ImageBrush on a Border with CornerRadius
-        // OR use <Image> with <Image.Clip>. Border with ImageBrush is easier for CornerRadius.
-        Border imgBorder = new Border();
-        imgBorder.CornerRadius = new CornerRadius(cornerRadius);
-        imgBorder.Background = new ImageBrush(_currentImage) { Stretch = Stretch.Fill }; // Use Fill because container is exactly image size
-        // Ensure high quality scaling
-        RenderOptions.SetBitmapScalingMode(imgBorder, BitmapScalingMode.HighQuality);
-
-        imgContainer.Child = imgBorder;
-        grid.Children.Add(imgContainer);
-
-        // Text Info
-        // Top: Brand (e.g. HASSELBLAD)
-        // Bottom: EXIF
-        
-        // Brand Label
-        string brandText = (_currentExif?.Make ?? "CAMERA").ToUpper();
-        if (brandText.Contains("HASSELBLAD")) brandText = "HASSELBLAD"; // Normalize
-        else if (brandText.Contains("SONY")) brandText = "SONY";
-        else if (brandText.Contains("NIKON")) brandText = "NIKON";
-        else if (brandText.Contains("CANON")) brandText = "CANON";
-        else if (brandText.Contains("FUJI")) brandText = "FUJIFILM";
-        else if (brandText.Contains("LEICA")) brandText = "LEICA";
-        
-        FrameworkElement brandElement = null;
-
-        // Check for Force Logo (Template override)
-        if (_currentTemplate != null && !string.IsNullOrEmpty(_currentTemplate.ForceLogoPath))
-        {
-             // Use Pack URI for Embedded Resource
-             // Format: pack://application:,,,/AssemblyName;component/Path/To/Resource
-             string resourcePath = $"pack://application:,,,/Yin;component/{_currentTemplate.ForceLogoPath.Replace('\\', '/')}";
-             
-             try 
-             {
-                 var logo = new BitmapImage();
-                 logo.BeginInit();
-                 logo.UriSource = new Uri(resourcePath);
-                 logo.CacheOption = BitmapCacheOption.OnLoad;
-                 logo.EndInit();
-                 
-                 Image imgLogo = new Image();
-                 imgLogo.Source = logo;
-                 imgLogo.Stretch = Stretch.Uniform;
-                if (_currentTemplate?.Name == "哈苏水印边框")
-                {
-                    double refDim = Math.Min(wBorder, hBorder);
-                    double factor = (_currentTemplate.ReferenceShortEdge > 0) ? refDim / _currentTemplate.ReferenceShortEdge : 1.0;
-                    imgLogo.Height = 32 * factor;
-                    RenderOptions.SetBitmapScalingMode(imgLogo, BitmapScalingMode.HighQuality);
-                }
-                else
-                {
-                    imgLogo.Height = hBorder * 0.025;
-                }
-                 imgLogo.HorizontalAlignment = HorizontalAlignment.Center;
-                 
-                 brandElement = imgLogo;
-             }
-             catch { /* Ignore */ }
-        }
-
-        // If no forced logo, check for Brand Text (e.g. Hasselblad) for automatic logo loading
-        if (brandElement == null && brandText == "HASSELBLAD") 
-        {
-             string resourcePath = "pack://application:,,,/Yin;component/Source/Hasselblad.png";
-             try 
-             {
-                 // Load Image
-                 var logo = new BitmapImage();
-                 logo.BeginInit();
-                 logo.UriSource = new Uri(resourcePath);
-                 logo.CacheOption = BitmapCacheOption.OnLoad;
-                 logo.EndInit();
-                 
-                 Image imgLogo = new Image();
-                 imgLogo.Source = logo;
-                 imgLogo.Stretch = Stretch.Uniform;
-                if (_currentTemplate?.Name == "哈苏水印边框")
-                {
-                    double refDim = Math.Min(wBorder, hBorder);
-                    double factor = (_currentTemplate.ReferenceShortEdge > 0) ? refDim / _currentTemplate.ReferenceShortEdge : 1.0;
-                    imgLogo.Height = 32 * factor;
-                    RenderOptions.SetBitmapScalingMode(imgLogo, BitmapScalingMode.HighQuality);
-                }
-                else
-                {
-                    imgLogo.Height = hBorder * 0.025;
-                }
-                 imgLogo.HorizontalAlignment = HorizontalAlignment.Center;
-                 
-                 brandElement = imgLogo;
-             }
-             catch { /* Ignore error, fall back to text */ }
-        }
-
-        if (brandElement == null)
-        {
-            // Use StackPanel to simulate character spacing since WPF TextBlock doesn't support it directly
-            StackPanel spBrand = new StackPanel();
-            spBrand.Orientation = Orientation.Horizontal;
-            spBrand.HorizontalAlignment = HorizontalAlignment.Center;
-            
-            double fontSize = hBorder * 0.02;
-            FontFamily font = new FontFamily("Arial");
-            FontWeight weight = FontWeights.Bold;
-            Brush brush = Brushes.Black;
-    
-            for (int i = 0; i < brandText.Length; i++)
-            {
-                TextBlock charBlock = new TextBlock();
-                charBlock.Text = brandText[i].ToString();
-                charBlock.FontFamily = font;
-                charBlock.FontWeight = weight;
-                charBlock.FontSize = fontSize;
-                charBlock.Foreground = brush;
-                
-                // Add spacing to right of character, except the last one
-                if (i < brandText.Length - 1)
-                {
-                    charBlock.Margin = new Thickness(0, 0, textSpacing, 0);
-                }
-                
-                spBrand.Children.Add(charBlock);
-            }
-            brandElement = spBrand;
-        }
-
-        // Layout: Brand Position
-        if (_currentLayout == LayoutMode.BrandTop_ExifBottom)
-        {
-            Grid topRegion = new Grid();
-            topRegion.VerticalAlignment = VerticalAlignment.Top;
-            topRegion.HorizontalAlignment = HorizontalAlignment.Stretch;
-            topRegion.Height = marginTop;
-            
-            brandElement.HorizontalAlignment = HorizontalAlignment.Center;
-            brandElement.VerticalAlignment = VerticalAlignment.Center;
-            topRegion.Children.Add(brandElement);
-            grid.Children.Add(topRegion);
-        }
-        else if (_currentLayout == LayoutMode.BrandBottom_Centered)
-        {
-             Brush textBrush = Brushes.White; 
-             string logoPath = _currentTemplate?.ForceLogoPath ?? "Source/Hasselblad_white.png";
-
-             if (ChkSmartAdaptation.IsChecked == true && _currentImage is BitmapSource bmp)
-             {
-                 Rect analysisRect = new Rect(0, bmp.PixelHeight * 0.85, bmp.PixelWidth, bmp.PixelHeight * 0.15);
-                 var stats = AnalyzeRegion(bmp, analysisRect);
-                 if (stats.avgLuma > 0.7)
-                 {
-                     textBrush = Brushes.Black;
-                     if (logoPath.Contains("white")) logoPath = logoPath.Replace("white", "black");
-                     else if (!logoPath.Contains("black")) logoPath = "Source/Hasselblad.png"; // Default black
-                 }
-             }
-
-             brandElement.VerticalAlignment = VerticalAlignment.Bottom;
-             if (brandElement is Image && !((BitmapImage)((Image)brandElement).Source).UriSource.OriginalString.Contains(logoPath))
-             {
-                  try 
-                  {
-                      string resourcePath = $"pack://application:,,,/Yin;component/{logoPath}";
-                      var logo = new BitmapImage();
-                      logo.BeginInit();
-                      logo.UriSource = new Uri(resourcePath);
-                      logo.CacheOption = BitmapCacheOption.OnLoad;
-                      logo.EndInit();
-                      ((Image)brandElement).Source = logo;
-                  }
-                  catch {}
-             }
-             else if (brandElement is TextBlock tb) tb.Foreground = textBrush;
-             else if (brandElement is StackPanel sp)
-             {
-                 foreach (var child in sp.Children)
-                 {
-                     if (child is TextBlock ctb) ctb.Foreground = textBrush;
-                 }
-             }
-             brandElement.VerticalAlignment = VerticalAlignment.Bottom;
-             
-             bool portrait = _currentImage.PixelHeight > _currentImage.PixelWidth;
-             double coef = portrait ? 1.6 : 1.3; // place text slightly above border, more on portrait
-             var offset = (marginBottom * coef) + logoOffsetY;
-             brandElement.Margin = new Thickness(0, 0, 0, offset); 
-             grid.Children.Add(brandElement);
-        }
-        else if (_currentLayout == LayoutMode.TwoLines_Bottom_Centered)
-        {
-            // Both use Two Lines logic, but Overlay uses WHITE text.
-            bool isOverlay = false;
-            Brush textBrush = new SolidColorBrush(Color.FromRgb(30, 30, 30));
-            Brush subTextBrush = new SolidColorBrush(Color.FromRgb(80, 80, 80));
-            
-            // --- Smart Adaptation Logic ---
-            bool showSmartPanel = false;
-            
-            if (ChkSmartAdaptation.IsChecked == true && _currentImage is BitmapSource bmp)
-            {
-                // Analyze bottom 15% of image
-                Rect analysisRect = new Rect(0, bmp.PixelHeight * 0.85, bmp.PixelWidth, bmp.PixelHeight * 0.15);
-                var stats = AnalyzeRegion(bmp, analysisRect);
-                
-                // Heuristic: Is text likely overlapping image?
-                // Only if marginBottom is small (< 100) or explicitly Overlay mode (which is removed, but logic remains for compact styles)
-                bool isCompact = (marginBottom < 100); 
-                
-                if (isCompact)
-                {
-                    // 1. Adaptive Color
-                    if (stats.avgLuma < 0.5) // Dark background
-                    {
-                        textBrush = Brushes.White;
-                        subTextBrush = new SolidColorBrush(Color.FromRgb(220, 220, 220));
-                    }
-                    
-                    // 2. Adaptive Panel
-                    if (stats.variance > 2000)
-                    {
-                        showSmartPanel = true;
-                    }
-                }
-            }
-            
-            StackPanel spContainer = new StackPanel();
-            spContainer.Orientation = Orientation.Vertical;
-            spContainer.HorizontalAlignment = HorizontalAlignment.Center;
-            spContainer.VerticalAlignment = VerticalAlignment.Bottom;
-            
-            // Smart Panel Container (Grid)
-            Grid panelGrid = new Grid();
-            
-            if (showSmartPanel)
-            {
-                Border panelBg = new Border();
-                panelBg.Background = (textBrush == Brushes.White) ? Brushes.Black : Brushes.White;
-                panelBg.Opacity = 0.3; 
-                panelBg.CornerRadius = new CornerRadius(10);
-                panelBg.Effect = new BlurEffect { Radius = 20 }; 
-                
-                panelGrid.Children.Add(panelBg);
-                spContainer.Margin = new Thickness(20, 10, 20, 10);
-            }
-            
-            // --- Line 1: Brand (Bold) + Model (Regular) ---
-            StackPanel spLine1 = new StackPanel();
-            spLine1.Orientation = Orientation.Horizontal;
-            spLine1.HorizontalAlignment = HorizontalAlignment.Center;
-            spLine1.Margin = new Thickness(0, 0, 0, hBorder * 0.005); 
-
-            double refDim = Math.Min(wBorder, hBorder);
-            double fontSizeL1 = refDim * 0.025; 
-            
-            // Helper
-            string GetValue(string? exifVal, string boxVal)
-            {
-                if (!string.IsNullOrWhiteSpace(exifVal)) return exifVal;
-                return boxVal ?? "";
-            }
-
-            // Brand Part
-            string makeStr = GetValue(_currentExif?.Make, TxtMake.Text);
-            if (string.IsNullOrWhiteSpace(makeStr)) makeStr = "CAMERA";
-            
-            TextBlock txtBrand = new TextBlock();
-            txtBrand.Text = makeStr.ToUpper() + " "; 
-            txtBrand.FontFamily = new FontFamily("Bahnschrift");
-            txtBrand.FontWeight = FontWeights.Bold;
-            txtBrand.FontSize = fontSizeL1;
-            txtBrand.Foreground = textBrush; 
-            
-            // Model Part
-            string modelStr = GetValue(_currentExif?.Model?.Replace("ILCE-", "ILCE-"), TxtModel.Text);
-            TextBlock txtModel = new TextBlock();
-            txtModel.Text = modelStr; 
-            txtModel.FontFamily = new FontFamily("Bahnschrift");
-            txtModel.FontWeight = FontWeights.Normal;
-            txtModel.FontSize = fontSizeL1;
-            txtModel.Foreground = textBrush;
-            
-            if (showSmartPanel)
-            {
-                DropShadowEffect glow = new DropShadowEffect();
-                glow.Color = (textBrush == Brushes.White) ? Colors.Black : Colors.White;
-                glow.BlurRadius = 10;
-                glow.ShadowDepth = 0;
-                glow.Opacity = 0.8;
-                spLine1.Effect = glow;
-            }
-
-            spLine1.Children.Add(txtBrand);
-            spLine1.Children.Add(txtModel);
-            
-            // --- Line 2: Lens (if avail) + Params ---
-            string lens = GetValue(_currentExif?.LensModel, TxtLens.Text);
-            string focal = GetValue(_currentExif?.FocalLength, TxtFocal.Text);
-            string aperture = GetValue(_currentExif?.FNumber, TxtFNumber.Text);
-            string shutter = GetValue(_currentExif?.ExposureTime, TxtShutter.Text);
-            string iso = GetValue(_currentExif?.ISOSpeed, TxtISO.Text);
-            
-            List<string> parts = new List<string>();
-            if (!string.IsNullOrEmpty(lens)) parts.Add(lens);
-            if (!string.IsNullOrEmpty(focal)) parts.Add(focal);
-            if (!string.IsNullOrEmpty(aperture)) parts.Add(aperture);
-            if (!string.IsNullOrEmpty(shutter)) parts.Add(shutter);
-            if (!string.IsNullOrEmpty(iso) && !iso.StartsWith("ISO")) parts.Add("ISO" + iso);
-            else if (!string.IsNullOrEmpty(iso)) parts.Add(iso);
-
-            string line2Text = string.Join("  ", parts);
-
-            TextBlock txtLine2 = new TextBlock();
-            txtLine2.Text = line2Text;
-            txtLine2.FontFamily = new FontFamily("Bahnschrift");
-            txtLine2.FontWeight = FontWeights.Normal;
-            txtLine2.FontSize = fontSizeL1 * 0.75; 
-            txtLine2.Foreground = subTextBrush;
-            txtLine2.HorizontalAlignment = HorizontalAlignment.Center;
-            
-            if (showSmartPanel)
-            {
-                DropShadowEffect glow = new DropShadowEffect();
-                glow.Color = (textBrush == Brushes.White) ? Colors.Black : Colors.White;
-                glow.BlurRadius = 8;
-                glow.ShadowDepth = 0;
-                glow.Opacity = 0.8;
-                txtLine2.Effect = glow;
-            }
-            
-            spContainer.Children.Add(spLine1);
-            spContainer.Children.Add(txtLine2);
-            
-            if (showSmartPanel)
-            {
-                panelGrid.Children.Add(spContainer);
-                panelGrid.HorizontalAlignment = HorizontalAlignment.Center;
-                panelGrid.VerticalAlignment = VerticalAlignment.Bottom;
-                panelGrid.Margin = new Thickness(0, 0, 0, (marginBottom * 0.3) - logoOffsetY);
-                grid.Children.Add(panelGrid);
-            }
-            else
-            {
-                spContainer.VerticalAlignment = VerticalAlignment.Bottom;
-                spContainer.Margin = new Thickness(0, 0, 0, (marginBottom * 0.3) - logoOffsetY);
-                grid.Children.Add(spContainer);
-            }
-        }
-
-        // EXIF Label
-        // Format: "FL 28mm   Aperture f/2.4   Shutter 1/100   ISO200"
-        if (_currentLayout == LayoutMode.BrandTop_ExifBottom && _currentExif != null)
-        {
-            string focal = !string.IsNullOrWhiteSpace(TxtFocal.Text) ? TxtFocal.Text : (_currentExif.FocalLength);
-            string aperture = !string.IsNullOrWhiteSpace(TxtFNumber.Text) ? TxtFNumber.Text : (_currentExif.FNumber);
-            string shutter = !string.IsNullOrWhiteSpace(TxtShutter.Text) ? TxtShutter.Text : (_currentExif.ExposureTime);
-            string iso = !string.IsNullOrWhiteSpace(TxtISO.Text) ? TxtISO.Text : (_currentExif.ISOSpeed);
-            if (!iso.StartsWith("ISO") && !string.IsNullOrEmpty(iso)) iso = "ISO" + iso;
-
-            string exifText = $"FL {focal}   Aperture {aperture}   Shutter {shutter}   {iso}";
-            
-            Grid bottomRegion = new Grid();
-            bottomRegion.VerticalAlignment = VerticalAlignment.Bottom;
-            bottomRegion.HorizontalAlignment = HorizontalAlignment.Stretch;
-            bottomRegion.Height = marginBottom;
-            
-            TextBlock txtExif = new TextBlock();
-            txtExif.Text = exifText;
-            txtExif.FontFamily = new FontFamily("Arial");
-            
-            double refDim = Math.Min(wBorder, hBorder);
-            txtExif.FontSize = refDim * 0.018;
-            
-            txtExif.Foreground = new SolidColorBrush(Color.FromRgb(50, 50, 50));
-            txtExif.HorizontalAlignment = HorizontalAlignment.Center;
-            txtExif.VerticalAlignment = VerticalAlignment.Center;
-            
-            bottomRegion.Children.Add(txtExif);
-            grid.Children.Add(bottomRegion);
-        }
-
-        // Layout
-        grid.Measure(new Size(wBorder, hBorder));
-        grid.Arrange(new Rect(0, 0, wBorder, hBorder));
-        grid.UpdateLayout();
-
-        // Render
-        RenderTargetBitmap rtb = new RenderTargetBitmap((int)wBorder, (int)hBorder, 96, 96, PixelFormats.Pbgra32);
-        rtb.Render(grid);
-        return rtb;
-    }
 
     private void BtnSave_Click(object sender, RoutedEventArgs e)
     {
@@ -1169,7 +409,32 @@ public partial class MainWindow : Window
         {
             try
             {
-                var final = RenderFinalImage();
+                var ctx = new RenderContext
+                {
+                    CurrentImage = _currentImage,
+                    Exif = _currentExif,
+                    Template = _currentTemplate,
+                    Layout = _currentLayout,
+                    IsMarginPriority = ChkMarginPriority.IsChecked == true,
+                    IsSmartAdaptation = ChkSmartAdaptation.IsChecked == true,
+                    ScalePercent = SliderScale.Value,
+                    MarginTop = SliderTopMargin.Value,
+                    MarginBottom = SliderBottomMargin.Value,
+                    MarginLeft = SliderLeftMargin.Value,
+                    MarginRight = SliderRightMargin.Value,
+                    CornerRadius = SliderCorner.Value,
+                    ShadowSize = SliderShadow.Value,
+                    TextSpacing = SliderTextSpacing.Value,
+                    LogoOffsetY = SliderLogoOffsetY.Value,
+                    TxtMake = TxtMake.Text,
+                    TxtModel = TxtModel.Text,
+                    TxtLens = TxtLens.Text,
+                    TxtFocal = TxtFocal.Text,
+                    TxtFNumber = TxtFNumber.Text,
+                    TxtShutter = TxtShutter.Text,
+                    TxtISO = TxtISO.Text
+                };
+                var final = RenderingService.RenderFinalImage(ctx);
                 JpegBitmapEncoder encoder = new JpegBitmapEncoder();
                 encoder.QualityLevel = 100;
                 encoder.Frames.Add(BitmapFrame.Create(final));
