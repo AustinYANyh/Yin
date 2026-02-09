@@ -117,26 +117,41 @@ public static class ExifService
     /// </summary>
     public static string ChooseBestLensName(List<(string desc, string name)> candidates)
     {
+        string Normalize(string x)
+        {
+            string y = x.Trim();
+            y = Regex.Replace(y, @"\s+", " ");
+            y = Regex.Replace(y, @"\bF\s*([0-9](?:\.[0-9]+)?)\b", m => $"f/{m.Groups[1].Value}", RegexOptions.IgnoreCase);
+            y = y.Replace(" II", " Ⅱ").Replace(" III", " Ⅲ").Replace(" IV", " Ⅳ");
+            y = Regex.Replace(y, @"^SONY\s+", "", RegexOptions.IgnoreCase);
+            return y;
+        }
         string best = "";
         int bestScore = int.MinValue;
         foreach (var c in candidates)
         {
-            string d = c.desc;
-            string n = c.name;
+            string d = Normalize(c.desc);
+            string n = c.name ?? "";
             int s = 0;
-            if (string.Equals(n, "Lens", StringComparison.OrdinalIgnoreCase)) s += 5;
-            if (string.Equals(n, "Lens Model", StringComparison.OrdinalIgnoreCase) || string.Equals(n, "LensModel", StringComparison.OrdinalIgnoreCase)) s += 4;
-            if (n.IndexOf("aux:Lens", StringComparison.OrdinalIgnoreCase) >= 0) s += 6;
-            if (n.IndexOf("exifEX:LensModel", StringComparison.OrdinalIgnoreCase) >= 0) s += 5;
-            if (n.IndexOf("LensType", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("Lens Type", StringComparison.OrdinalIgnoreCase) >= 0) s += 2;
-            if (n.IndexOf("Specification", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("Spec", StringComparison.OrdinalIgnoreCase) >= 0) s -= 4;
-            if (Regex.IsMatch(d, @"^\s*\d{1,3}(\s*-\s*\d{1,3})?\s*mm\s+f/?\s*\d(\.\d+)?\s*$", RegexOptions.IgnoreCase)) s -= 3;
-            var tokens = new[] { "FE", "GM", "OSS", "ZA", "NIKKOR", "RF", "EF", "L", "APO", "DG", "DN", "ART", "XCD", "HC", "HCD", "ZEISS", "TAMRON", "SIGMA", "SAMYANG", "VOIGT", "SUMMILUX", "SUMMICRON", "Noct", "G-Master", "G Master" };
+            if (string.Equals(n, "Lens", StringComparison.OrdinalIgnoreCase)) s += 6;
+            if (string.Equals(n, "Lens Model", StringComparison.OrdinalIgnoreCase) || string.Equals(n, "LensModel", StringComparison.OrdinalIgnoreCase)) s += 5;
+            if (n.IndexOf("aux:Lens", StringComparison.OrdinalIgnoreCase) >= 0) s += 7;
+            if (n.IndexOf("exifEX:LensModel", StringComparison.OrdinalIgnoreCase) >= 0) s += 6;
+            if (n.IndexOf("LensType", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("Lens Type", StringComparison.OrdinalIgnoreCase) >= 0) s += 1;
+            bool hasMmRange = Regex.IsMatch(d, @"\d{1,3}\s*-\s*\d{1,3}\s*mm", RegexOptions.IgnoreCase);
+            bool hasMmPrime = Regex.IsMatch(d, @"\b\d{1,3}\s*mm\b", RegexOptions.IgnoreCase);
+            bool hasF = Regex.IsMatch(d, @"f/?\s*\d(\.\d+)?", RegexOptions.IgnoreCase);
+            if (hasMmRange) s += 6;
+            if (!hasMmRange && hasMmPrime) s += 5;
+            if (hasF) s += 4;
+            var tokens = new[] { "FE", "GM", "OSS", "ZA", "NIKKOR", "RF", "EF", "L", "APO", "DG", "DN", "ART", "XCD", "HC", "HCD", "ZEISS", "TAMRON", "SIGMA", "SAMYANG", "VOIGT", "SUMMILUX", "SUMMICRON", "Noct", "G-Master", "G Master", "G", "E" };
             foreach (var t in tokens)
             {
                 if (d.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0) { s += 3; break; }
             }
+            if (d.IndexOf("Ⅱ", StringComparison.OrdinalIgnoreCase) >= 0 || d.IndexOf("III", StringComparison.OrdinalIgnoreCase) >= 0 || d.IndexOf("Ⅲ", StringComparison.OrdinalIgnoreCase) >= 0) s += 1;
             if (Regex.IsMatch(d, @"[A-Za-z]{2,}")) s += 1;
+            if (d.Length >= 8) s += 1;
             if (s > bestScore) { bestScore = s; best = d; }
         }
         return best;

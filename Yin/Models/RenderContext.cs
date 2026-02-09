@@ -50,4 +50,6 @@ public class RenderContext
     public string TxtShutter { get; set; } = "";
     /// <summary>ISO 文本框</summary>
     public string TxtISO { get; set; } = "";
+    /// <summary>输出缩放比例（预览可用，范围 0.1-1.0）</summary>
+    public double OutputScale { get; set; } = 1.0;
 }

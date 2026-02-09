@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
 using Yin.Models;
 
 namespace Yin.Services;
@@ -74,6 +75,254 @@ public static class RenderingService
             cornerRadius, shadowSize, textSpacing, logoOffsetY);
     }
 
+    public static RenderTargetBitmap RenderOverlayImage(RenderContext ctx)
+    {
+        if (ctx.CurrentImage == null) throw new ArgumentNullException(nameof(ctx.CurrentImage));
+        double wImg = ctx.CurrentImage.PixelWidth;
+        double hImg = ctx.CurrentImage.PixelHeight;
+        double scalePercent = ctx.ScalePercent / 100.0;
+        double marginTop = ctx.MarginTop;
+        double textSpacing = ctx.TextSpacing;
+        double marginBottom = ctx.MarginBottom;
+        double marginLeft = ctx.MarginLeft;
+        double marginRight = ctx.MarginRight;
+        double logoOffsetY = ctx.LogoOffsetY;
+        double cornerRadius = ctx.CornerRadius;
+        double shadowSize = ctx.ShadowSize;
+        double wBorder, hBorder;
+        double finalMarginTop, finalMarginBottom, finalMarginLeft, finalMarginRight;
+        if (ctx.IsMarginPriority)
+        {
+            finalMarginTop = marginTop;
+            finalMarginBottom = marginBottom;
+            finalMarginLeft = marginLeft;
+            finalMarginRight = marginRight;
+            wBorder = wImg + marginLeft + marginRight;
+            hBorder = hImg + marginTop + marginBottom;
+        }
+        else
+        {
+            double hBorderBase = hImg / scalePercent;
+            double baseMargin = (hBorderBase - hImg) / 2;
+            finalMarginTop = Math.Max(baseMargin, marginTop);
+            finalMarginBottom = Math.Max(baseMargin, marginBottom);
+            finalMarginLeft = Math.Max(baseMargin, marginLeft);
+            finalMarginRight = Math.Max(baseMargin, marginRight);
+            wBorder = wImg + finalMarginLeft + finalMarginRight;
+            hBorder = hImg + finalMarginTop + finalMarginBottom;
+        }
+
+        Grid grid = new Grid
+        {
+            Width = wBorder,
+            Height = hBorder,
+            Background = Brushes.Transparent
+        };
+
+        Rectangle bgRect = new Rectangle
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+        double longest = Math.Max(wImg, hImg);
+        double targetLongest = 15.0;
+        double ds = Math.Min(1.0, targetLongest / longest);
+        TransformedBitmap down = new TransformedBitmap();
+        down.BeginInit();
+        down.Source = ctx.CurrentImage;
+        down.Transform = new ScaleTransform(ds, ds);
+        down.EndInit();
+        bgRect.Fill = new ImageBrush(down)
+        {
+            Stretch = Stretch.UniformToFill,
+            AlignmentX = AlignmentX.Center,
+            AlignmentY = AlignmentY.Center
+        };
+        RenderOptions.SetBitmapScalingMode(bgRect, BitmapScalingMode.Linear);
+        bgRect.Effect = new BlurEffect { Radius = 30 };
+        grid.Children.Add(bgRect);
+
+        Rectangle vignetteRect = new Rectangle
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            IsHitTestVisible = false
+        };
+        RadialGradientBrush vignetteBrush = new RadialGradientBrush
+        {
+            Center = new Point(0.5, 0.5),
+            GradientOrigin = new Point(0.5, 0.5),
+            RadiusX = 0.8,
+            RadiusY = 0.8
+        };
+        vignetteBrush.GradientStops.Add(new GradientStop(Color.FromArgb(0, 0, 0, 0), 0.0));
+        vignetteBrush.GradientStops.Add(new GradientStop(Color.FromArgb(60, 0, 0, 0), 0.6));
+        vignetteBrush.GradientStops.Add(new GradientStop(Color.FromArgb(140, 0, 0, 0), 1.0));
+        vignetteRect.Fill = vignetteBrush;
+        grid.Children.Add(vignetteRect);
+
+        Border imgContainer = new Border
+        {
+            Width = wImg,
+            Height = hImg,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(finalMarginLeft, finalMarginTop, finalMarginRight, finalMarginBottom),
+            Effect = null
+        };
+
+        if (shadowSize > 0)
+        {
+            imgContainer.Effect = new DropShadowEffect
+            {
+                Color = Colors.Black,
+                Direction = 315,
+                ShadowDepth = shadowSize / 2,
+                BlurRadius = shadowSize,
+                Opacity = 0.4
+            };
+        }
+
+        Border imgBorder = new Border
+        {
+            CornerRadius = new CornerRadius(cornerRadius),
+            Background = new ImageBrush(ctx.CurrentImage) { Stretch = Stretch.Fill }
+        };
+        RenderOptions.SetBitmapScalingMode(imgBorder, BitmapScalingMode.HighQuality);
+        imgContainer.Child = imgBorder;
+        grid.Children.Add(imgContainer);
+
+        if (ctx.Layout == LayoutMode.TwoLines_Bottom_Centered)
+        {
+            Brush textBrush = Brushes.White;
+            Brush subTextBrush = new SolidColorBrush(Color.FromRgb(220, 220, 220));
+            bool showSmartPanel = true;
+
+            if (ctx.IsSmartAdaptation && ctx.CurrentImage is BitmapSource bmp)
+            {
+                Rect analysisRect = new Rect(0, bmp.PixelHeight * 0.85, bmp.PixelWidth, bmp.PixelHeight * 0.15);
+                var stats = AnalyzeRegion(bmp, analysisRect);
+                if (stats.avgLuma > 0.7)
+                {
+                    textBrush = Brushes.Black;
+                    subTextBrush = new SolidColorBrush(Color.FromRgb(30, 30, 30));
+                }
+            }
+
+            // 底部遮罩已移除
+
+            StackPanel spContainer = new StackPanel
+            {
+                Orientation = Orientation.Vertical,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 0, Math.Max(10, (finalMarginBottom * 0.3) - logoOffsetY))
+            };
+
+            double refDim = Math.Min(wBorder, hBorder);
+            double fontSizeL1 = refDim * 0.025;
+            string GetValue(string? exifVal, string boxVal)
+            {
+                if (!string.IsNullOrWhiteSpace(exifVal)) return exifVal;
+                return boxVal ?? "";
+            }
+
+            string makeStr = GetValue(ctx.Exif?.Make, ctx.TxtMake);
+            if (string.IsNullOrWhiteSpace(makeStr)) makeStr = "CAMERA";
+
+            TextBlock txtBrand = new TextBlock
+            {
+                Text = makeStr.ToUpper() + " ",
+                FontFamily = new FontFamily("Bahnschrift"),
+                FontWeight = FontWeights.Bold,
+                FontSize = fontSizeL1,
+                Foreground = textBrush,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            string modelStr = GetValue(ctx.Exif?.Model?.Replace("ILCE-", "ILCE-"), ctx.TxtModel);
+            TextBlock txtModel = new TextBlock
+            {
+                Text = modelStr,
+                FontFamily = new FontFamily("Bahnschrift"),
+                FontWeight = FontWeights.Normal,
+                FontSize = fontSizeL1,
+                Foreground = textBrush,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            StackPanel spLine1 = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, hBorder * 0.005)
+            };
+
+            if (showSmartPanel)
+            {
+                DropShadowEffect glow = new DropShadowEffect
+                {
+                    Color = (textBrush == Brushes.White) ? Colors.Black : Colors.White,
+                    BlurRadius = 10,
+                    ShadowDepth = 0,
+                    Opacity = 0.8
+                };
+                spLine1.Effect = glow;
+            }
+            spLine1.Children.Add(txtBrand);
+            spLine1.Children.Add(txtModel);
+
+            string lens = GetValue(ctx.Exif?.LensModel, ctx.TxtLens);
+            string focal = GetValue(ctx.Exif?.FocalLength, ctx.TxtFocal);
+            string aperture = GetValue(ctx.Exif?.FNumber, ctx.TxtFNumber);
+            string shutter = GetValue(ctx.Exif?.ExposureTime, ctx.TxtShutter);
+            string iso = GetValue(ctx.Exif?.ISOSpeed, ctx.TxtISO);
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(lens)) parts.Add(lens);
+            if (!string.IsNullOrEmpty(focal)) parts.Add(focal);
+            if (!string.IsNullOrEmpty(aperture)) parts.Add(aperture);
+            if (!string.IsNullOrEmpty(shutter)) parts.Add(shutter);
+            if (!string.IsNullOrEmpty(iso) && !iso.StartsWith("ISO")) parts.Add("ISO" + iso);
+            else if (!string.IsNullOrEmpty(iso)) parts.Add(iso);
+            string line2Text = string.Join("  ", parts);
+
+            TextBlock txtLine2 = new TextBlock
+            {
+                Text = line2Text,
+                FontFamily = new FontFamily("Bahnschrift"),
+                FontWeight = FontWeights.Normal,
+                FontSize = fontSizeL1 * 0.75,
+                Foreground = subTextBrush,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+
+            if (showSmartPanel)
+            {
+                DropShadowEffect glow = new DropShadowEffect
+                {
+                    Color = (textBrush == Brushes.White) ? Colors.Black : Colors.White,
+                    BlurRadius = 8,
+                    ShadowDepth = 0,
+                    Opacity = 0.8
+                };
+                txtLine2.Effect = glow;
+            }
+
+            spContainer.Children.Add(spLine1);
+            spContainer.Children.Add(txtLine2);
+            grid.Children.Add(spContainer);
+        }
+
+        grid.Measure(new Size(wBorder, hBorder));
+        grid.Arrange(new Rect(0, 0, wBorder, hBorder));
+        grid.UpdateLayout();
+        double outScale = (ctx.OutputScale <= 0 || ctx.OutputScale > 1.0) ? 1.0 : ctx.OutputScale;
+        int outW = Math.Max(1, (int)Math.Round(wBorder * outScale));
+        int outH = Math.Max(1, (int)Math.Round(hBorder * outScale));
+        RenderTargetBitmap rtb = new RenderTargetBitmap(outW, outH, 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(grid);
+        return rtb;
+    }
     private static (double avgLuma, double variance) AnalyzeRegion(BitmapSource source, Rect region)
     {
         try
