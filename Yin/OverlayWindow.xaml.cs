@@ -10,6 +10,14 @@ namespace Yin;
 
 public partial class OverlayWindow : Window
 {
+    private const double DefaultOverlayStyleReferenceShortEdge = 1800;
+    private const double DefaultOverlayCornerRadius = 24;
+    private const double DefaultOverlayShadowSize = 18;
+    private const double MinOverlayCornerRadius = 8;
+    private const double MaxOverlayCornerRadius = 64;
+    private const double MinOverlayShadowSize = 6;
+    private const double MaxOverlayShadowSize = 40;
+
     private BitmapImage? _currentImage;
     private string _currentFilePath = string.Empty;
     private ExifInfo? _currentExif;
@@ -32,8 +40,8 @@ public partial class OverlayWindow : Window
             Scale = 90,
             MarginTop = 150, MarginBottom = 400,
             MarginLeft = 150, MarginRight = 150,
-            Corner = 0,
-            Shadow = 0,
+            Corner = DefaultOverlayCornerRadius,
+            Shadow = DefaultOverlayShadowSize,
             Spacing = 5,
             Layout = LayoutMode.TwoLines_Bottom_Centered,
             IsMarginPriority = true,
@@ -44,12 +52,12 @@ public partial class OverlayWindow : Window
             LogoOffsetY = 0,
             DefaultMake = "SONY",
             DefaultModel = "ILCE-7RM5",
-            DefaultLens = "FE 70-200mm OSS GM II",
+            DefaultLens = "FE 70-200mm F2.8 GM OSS II",
             DefaultFocal = "70mm",
             DefaultFNumber = "f/2.8",
             DefaultShutter = "1/800",
             DefaultISO = "100",
-            ReferenceShortEdge = 1800
+            ReferenceShortEdge = DefaultOverlayStyleReferenceShortEdge
         });
 
         CmbTemplates.ItemsSource = _templates;
@@ -98,6 +106,44 @@ public partial class OverlayWindow : Window
 
         _currentLayout = tmpl.Layout;
         _currentTemplate = tmpl;
+        ApplyOverlayVisualDefaults();
+    }
+
+    private void ApplyOverlayVisualDefaults()
+    {
+        if (_currentImage == null)
+        {
+            return;
+        }
+
+        double shortEdge = Math.Min(_currentImage.PixelWidth, _currentImage.PixelHeight);
+        if (shortEdge <= 0)
+        {
+            return;
+        }
+
+        double referenceShortEdge = _currentTemplate?.ReferenceShortEdge > 0
+            ? _currentTemplate.ReferenceShortEdge
+            : DefaultOverlayStyleReferenceShortEdge;
+        double factor = Math.Clamp(shortEdge / referenceShortEdge, 0.35, 3.0);
+
+        double baseCorner = _currentTemplate?.Corner > 0
+            ? _currentTemplate.Corner
+            : DefaultOverlayCornerRadius;
+        double baseShadow = _currentTemplate?.Shadow > 0
+            ? _currentTemplate.Shadow
+            : DefaultOverlayShadowSize;
+
+        double corner = Math.Clamp(Math.Round(baseCorner * factor), MinOverlayCornerRadius, MaxOverlayCornerRadius);
+        double shadow = Math.Clamp(Math.Round(baseShadow * factor), MinOverlayShadowSize, MaxOverlayShadowSize);
+
+        SliderCorner.Value = ClampToSliderRange(SliderCorner, corner);
+        SliderShadow.Value = ClampToSliderRange(SliderShadow, shadow);
+    }
+
+    private static double ClampToSliderRange(Slider slider, double value)
+    {
+        return Math.Clamp(value, slider.Minimum, slider.Maximum);
     }
 
     private void CmbTemplates_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -196,12 +242,16 @@ public partial class OverlayWindow : Window
             bitmap.Freeze();
             _currentImage = bitmap;
             _currentExif = ExifService.ReadExifData(path);
-            if (_currentTemplate != null && _currentTemplate.ReferenceShortEdge > 0)
+            if (_currentTemplate != null)
             {
                 ApplyTemplateValues(_currentTemplate);
             }
+            else
+            {
+                ApplyOverlayVisualDefaults();
+            }
             UpdatePreview();
-            TxtStatus.Text = $"Loaded: {Path.GetFileName(path)} | {_currentExif?.Model}";
+            TxtStatus.Text = $"Loaded: {Path.GetFileName(path)} | {_currentExif?.Model} | Corner {SliderCorner.Value:N0} | Shadow {SliderShadow.Value:N0}";
         }
         catch (Exception ex)
         {

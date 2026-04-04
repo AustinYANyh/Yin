@@ -106,7 +106,7 @@ public partial class MainWindow : Window
             LogoOffsetY = 0,
             DefaultMake = "SONY",
             DefaultModel = "ILCE-7RM5",
-            DefaultLens = "FE 70-200mm GM OSS II",
+            DefaultLens = "FE 70-200mm F2.8 GM OSS II",
             DefaultFocal = "70mm",
             DefaultFNumber = "f/2.8",
             DefaultShutter = "1/800",
