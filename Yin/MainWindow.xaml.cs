@@ -1,14 +1,9 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
-using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
-using MetadataExtractor;
-using MetadataExtractor.Formats.Exif;
-using System.Text.RegularExpressions;
-using MetadataExtractor.Formats.Xmp;
 using Yin.Models;
 using Yin.Services;
 
@@ -16,29 +11,80 @@ namespace Yin;
 
 public partial class MainWindow : Window
 {
+    private const string DefaultBorderTemplateName = "底部两行机身+参数";
+    private const string DefaultOverlayTemplateName = "底部机身带参数_overlay";
+    private const double DefaultOverlayStyleReferenceShortEdge = 1800;
+    private const double DefaultOverlayCornerRadius = 24;
+    private const double DefaultOverlayShadowSize = 18;
+    private const double MinOverlayCornerRadius = 8;
+    private const double MaxOverlayCornerRadius = 64;
+    private const double MinOverlayShadowSize = 6;
+    private const double MaxOverlayShadowSize = 40;
+
+    private enum RenderMode
+    {
+        Border,
+        Overlay
+    }
+
+    private sealed class ModeUiState
+    {
+        public string? TemplateName { get; init; }
+        public LayoutMode Layout { get; init; }
+        public double Scale { get; init; }
+        public double MarginTop { get; init; }
+        public double MarginBottom { get; init; }
+        public double MarginLeft { get; init; }
+        public double MarginRight { get; init; }
+        public double CornerRadius { get; init; }
+        public double ShadowSize { get; init; }
+        public double TextSpacing { get; init; }
+        public double LogoOffsetY { get; init; }
+        public bool IsMarginPriority { get; init; }
+        public bool IsSmartAdaptation { get; init; }
+        public bool IsSyncVertical { get; init; }
+        public bool IsSyncHorizontal { get; init; }
+        public string TxtMake { get; init; } = "";
+        public string TxtModel { get; init; } = "";
+        public string TxtLens { get; init; } = "";
+        public string TxtFocal { get; init; } = "";
+        public string TxtFNumber { get; init; } = "";
+        public string TxtShutter { get; init; } = "";
+        public string TxtISO { get; init; } = "";
+    }
+
     private BitmapImage? _currentImage;
     private string _currentFilePath = string.Empty;
     private ExifInfo? _currentExif;
 
+    private readonly List<TemplateModel> _borderTemplates = new();
+    private readonly List<TemplateModel> _overlayTemplates = new();
 
-    private List<TemplateModel> _templates = new List<TemplateModel>();
+    private RenderMode _currentMode = RenderMode.Border;
     private LayoutMode _currentLayout = LayoutMode.BrandTop_ExifBottom;
     private TemplateModel? _currentTemplate;
+    private ModeUiState? _borderModeState;
+    private ModeUiState? _overlayModeState;
+    private bool _isRestoringUi;
+    private bool _isSwitchingMode;
 
     public MainWindow()
     {
         InitializeComponent();
         InitializeTemplates();
+        InitializeMode();
     }
 
     private void InitializeTemplates()
     {
-        _templates.Add(new TemplateModel
+        _borderTemplates.Add(new TemplateModel
         {
             Name = "无",
             Scale = 85,
-            MarginTop = 100, MarginBottom = 100,
-            MarginLeft = 0, MarginRight = 0,
+            MarginTop = 100,
+            MarginBottom = 100,
+            MarginLeft = 0,
+            MarginRight = 0,
             Corner = 100,
             Shadow = 20,
             Spacing = 5,
@@ -46,16 +92,18 @@ public partial class MainWindow : Window
             IsMarginPriority = false,
             IsSyncVertical = true,
             IsSyncHorizontal = true,
-            ForceLogoPath = null, // 使用自动解析逻辑
+            ForceLogoPath = null,
             LogoOffsetY = 0
         });
 
-        _templates.Add(new TemplateModel
+        _borderTemplates.Add(new TemplateModel
         {
             Name = "哈苏水印边框",
             Scale = 85,
-            MarginTop = 60, MarginBottom = 80,
-            MarginLeft = 70, MarginRight = 70,
+            MarginTop = 60,
+            MarginBottom = 80,
+            MarginLeft = 70,
+            MarginRight = 70,
             Corner = 0,
             Shadow = 20,
             Spacing = 5,
@@ -66,15 +114,17 @@ public partial class MainWindow : Window
             IsSmartAdaptation = true,
             ForceLogoPath = "Source/Hasselblad.png",
             LogoOffsetY = 0,
-            ReferenceShortEdge = 1800,
+            ReferenceShortEdge = 1800
         });
 
-        _templates.Add(new TemplateModel
+        _borderTemplates.Add(new TemplateModel
         {
             Name = "哈苏水印居中",
             Scale = 90,
-            MarginTop = 120, MarginBottom = 220,
-            MarginLeft = 120, MarginRight = 120,
+            MarginTop = 120,
+            MarginBottom = 220,
+            MarginLeft = 120,
+            MarginRight = 120,
             Corner = 0,
             Shadow = 20,
             Spacing = 5,
@@ -88,20 +138,22 @@ public partial class MainWindow : Window
             ReferenceShortEdge = 1800
         });
 
-        _templates.Add(new TemplateModel
+        _borderTemplates.Add(new TemplateModel
         {
             Name = "底部两行机身+参数",
             Scale = 90,
-            MarginTop = 150, MarginBottom = 400, // 从 630 调整为 400，外观更紧凑
-            MarginLeft = 150, MarginRight = 150,
+            MarginTop = 150,
+            MarginBottom = 400,
+            MarginLeft = 150,
+            MarginRight = 150,
             Corner = 0,
             Shadow = 20,
             Spacing = 5,
             Layout = LayoutMode.TwoLines_Bottom_Centered,
             IsMarginPriority = true,
-            IsSyncVertical = false, // 上下边距不同步
+            IsSyncVertical = false,
             IsSyncHorizontal = true,
-            IsSmartAdaptation = true, // 默认启用智能自适应
+            IsSmartAdaptation = true,
             ForceLogoPath = null,
             LogoOffsetY = 0,
             DefaultMake = "SONY",
@@ -111,266 +163,420 @@ public partial class MainWindow : Window
             DefaultFNumber = "f/2.8",
             DefaultShutter = "1/800",
             DefaultISO = "100",
-            ReferenceShortEdge = 1800 // 以短边为参考调整
+            ReferenceShortEdge = 1800
         });
 
-        CmbTemplates.ItemsSource = _templates;
+        _overlayTemplates.Add(new TemplateModel
+        {
+            Name = "底部机身带参数_overlay",
+            Scale = 90,
+            MarginTop = 150,
+            MarginBottom = 400,
+            MarginLeft = 150,
+            MarginRight = 150,
+            Corner = DefaultOverlayCornerRadius,
+            Shadow = DefaultOverlayShadowSize,
+            Spacing = 5,
+            Layout = LayoutMode.TwoLines_Bottom_Centered,
+            IsMarginPriority = true,
+            IsSyncVertical = false,
+            IsSyncHorizontal = true,
+            IsSmartAdaptation = true,
+            ForceLogoPath = null,
+            LogoOffsetY = 0,
+            DefaultMake = "SONY",
+            DefaultModel = "ILCE-7RM5",
+            DefaultLens = "FE 70-200mm F2.8 GM OSS II",
+            DefaultFocal = "70mm",
+            DefaultFNumber = "f/2.8",
+            DefaultShutter = "1/800",
+            DefaultISO = "100",
+            ReferenceShortEdge = DefaultOverlayStyleReferenceShortEdge
+        });
+
         CmbTemplates.DisplayMemberPath = "Name";
-        CmbTemplates.SelectedIndex = 3; // 默认选择
     }
 
-    // 应用模板到界面；必要时考虑按参考短边缩放
-    private void ApplyTemplateValues(TemplateModel tmpl)
+    private void InitializeMode()
     {
-        // 当启用自适应时计算缩放因子
-        double factor = 1.0;
-        if (tmpl.ReferenceShortEdge > 0 && _currentImage != null)
+        _currentMode = RenderMode.Border;
+        SwitchMode(RenderMode.Border, true);
+        RadioModeBorder.IsChecked = true;
+    }
+
+    private void SwitchMode(RenderMode mode, bool forceDefault = false)
+    {
+        if (_isSwitchingMode)
         {
-             // 使用最短边（短边）确保不同宽高比下缩放稳定
-             double shortEdge = Math.Min(_currentImage.PixelWidth, _currentImage.PixelHeight);
-             factor = shortEdge / tmpl.ReferenceShortEdge;
-             
-             // 合理范围校验
-             if (factor < 0.1) factor = 0.1;
-             if (factor > 10) factor = 10;
+            return;
         }
 
-        // 1. 先更新同步复选框状态
-        ChkSyncVertical.Checked -= ChkSyncVertical_Checked;
-        ChkSyncHorizontal.Checked -= ChkSyncHorizontal_Checked;
-
-        ChkSyncVertical.IsChecked = tmpl.IsSyncVertical;
-        ChkSyncHorizontal.IsChecked = tmpl.IsSyncHorizontal;
-
-        ChkSyncVertical.Checked += ChkSyncVertical_Checked;
-        ChkSyncHorizontal.Checked += ChkSyncHorizontal_Checked;
-
-        // 2. 用缩放后的数值更新滑块
-        SliderScale.Value = tmpl.Scale;
-        
-        SliderTopMargin.Value = tmpl.MarginTop * factor;
-        SliderBottomMargin.Value = tmpl.MarginBottom * factor;
-        SliderLeftMargin.Value = tmpl.MarginLeft * factor;
-        SliderRightMargin.Value = tmpl.MarginRight * factor;
-        
-        SliderCorner.Value = tmpl.Corner * factor;
-        SliderShadow.Value = tmpl.Shadow * factor;
-        SliderTextSpacing.Value = tmpl.Spacing * factor; // 间距通常也需要随缩放调整
-        SliderLogoOffsetY.Value = tmpl.LogoOffsetY * factor;
-        
-        if (tmpl.Name == "哈苏水印边框" && _currentImage != null)
+        if (!forceDefault && mode == _currentMode && _currentTemplate != null)
         {
-            SliderTopMargin.Value *= 1.5;
-            SliderBottomMargin.Value *= 1.5;
+            UpdateModeUi();
+            return;
+        }
+
+        _isSwitchingMode = true;
+        try
+        {
+            if (!forceDefault && _currentTemplate != null)
+            {
+                SaveCurrentModeState();
+            }
+
+            _currentMode = mode;
+            BindTemplatesForMode(mode);
+            UpdateModeUi();
+
+            bool restored = !forceDefault && TryRestoreModeState(mode);
+            if (!restored)
+            {
+                ApplyDefaultTemplateForMode(mode);
+            }
+
+            if (_currentImage != null)
+            {
+                UpdatePreview();
+            }
+            else
+            {
+                ImgPreview.Source = null;
+            }
+
+            UpdateStatus();
+        }
+        finally
+        {
+            _isSwitchingMode = false;
+        }
+    }
+
+    private void BindTemplatesForMode(RenderMode mode)
+    {
+        _isRestoringUi = true;
+        try
+        {
+            CmbTemplates.ItemsSource = null;
+            CmbTemplates.ItemsSource = GetTemplatesForMode(mode);
+        }
+        finally
+        {
+            _isRestoringUi = false;
+        }
+    }
+
+    private List<TemplateModel> GetTemplatesForMode(RenderMode mode)
+    {
+        return mode == RenderMode.Border ? _borderTemplates : _overlayTemplates;
+    }
+
+    private string GetDefaultTemplateName(RenderMode mode)
+    {
+        return mode == RenderMode.Border ? DefaultBorderTemplateName : DefaultOverlayTemplateName;
+    }
+
+    private TemplateModel? FindTemplate(RenderMode mode, string? templateName)
+    {
+        if (string.IsNullOrWhiteSpace(templateName))
+        {
+            return null;
+        }
+
+        return GetTemplatesForMode(mode).FirstOrDefault(t => t.Name == templateName);
+    }
+
+    private void ApplyDefaultTemplateForMode(RenderMode mode)
+    {
+        TemplateModel? tmpl = FindTemplate(mode, GetDefaultTemplateName(mode)) ?? GetTemplatesForMode(mode).FirstOrDefault();
+        if (tmpl == null)
+        {
+            return;
+        }
+
+        SelectTemplate(tmpl);
+        ApplyTemplateValues(tmpl);
+    }
+
+    private bool TryRestoreModeState(RenderMode mode)
+    {
+        ModeUiState? state = GetModeState(mode);
+        if (state == null)
+        {
+            return false;
+        }
+
+        TemplateModel? tmpl = FindTemplate(mode, state.TemplateName) ?? GetTemplatesForMode(mode).FirstOrDefault();
+        if (tmpl == null)
+        {
+            return false;
+        }
+
+        SelectTemplate(tmpl);
+        RestoreUiState(tmpl, state);
+        return true;
+    }
+
+    private ModeUiState? GetModeState(RenderMode mode)
+    {
+        return mode == RenderMode.Border ? _borderModeState : _overlayModeState;
+    }
+
+    private void SaveCurrentModeState()
+    {
+        if (_currentTemplate == null)
+        {
+            return;
+        }
+
+        ModeUiState state = CaptureCurrentUiState();
+        if (_currentMode == RenderMode.Border)
+        {
+            _borderModeState = state;
+        }
+        else
+        {
+            _overlayModeState = state;
+        }
+    }
+
+    private ModeUiState CaptureCurrentUiState()
+    {
+        return new ModeUiState
+        {
+            TemplateName = _currentTemplate?.Name,
+            Layout = _currentLayout,
+            Scale = SliderScale.Value,
+            MarginTop = SliderTopMargin.Value,
+            MarginBottom = SliderBottomMargin.Value,
+            MarginLeft = SliderLeftMargin.Value,
+            MarginRight = SliderRightMargin.Value,
+            CornerRadius = SliderCorner.Value,
+            ShadowSize = SliderShadow.Value,
+            TextSpacing = SliderTextSpacing.Value,
+            LogoOffsetY = SliderLogoOffsetY.Value,
+            IsMarginPriority = ChkMarginPriority.IsChecked == true,
+            IsSmartAdaptation = ChkSmartAdaptation.IsChecked == true,
+            IsSyncVertical = ChkSyncVertical.IsChecked == true,
+            IsSyncHorizontal = ChkSyncHorizontal.IsChecked == true,
+            TxtMake = TxtMake.Text,
+            TxtModel = TxtModel.Text,
+            TxtLens = TxtLens.Text,
+            TxtFocal = TxtFocal.Text,
+            TxtFNumber = TxtFNumber.Text,
+            TxtShutter = TxtShutter.Text,
+            TxtISO = TxtISO.Text
+        };
+    }
+
+    private void RestoreUiState(TemplateModel template, ModeUiState state)
+    {
+        _currentTemplate = template;
+        _currentLayout = state.Layout;
+
+        _isRestoringUi = true;
+        try
+        {
+            CmbTemplates.SelectedItem = template;
+            ChkSyncVertical.IsChecked = state.IsSyncVertical;
+            ChkSyncHorizontal.IsChecked = state.IsSyncHorizontal;
+            SliderScale.Value = ClampToSliderRange(SliderScale, state.Scale);
+            SliderTopMargin.Value = ClampToSliderRange(SliderTopMargin, state.MarginTop);
+            SliderBottomMargin.Value = ClampToSliderRange(SliderBottomMargin, state.MarginBottom);
+            SliderLeftMargin.Value = ClampToSliderRange(SliderLeftMargin, state.MarginLeft);
+            SliderRightMargin.Value = ClampToSliderRange(SliderRightMargin, state.MarginRight);
+            SliderCorner.Value = ClampToSliderRange(SliderCorner, state.CornerRadius);
+            SliderShadow.Value = ClampToSliderRange(SliderShadow, state.ShadowSize);
+            SliderTextSpacing.Value = ClampToSliderRange(SliderTextSpacing, state.TextSpacing);
+            SliderLogoOffsetY.Value = ClampToSliderRange(SliderLogoOffsetY, state.LogoOffsetY);
+            ChkMarginPriority.IsChecked = state.IsMarginPriority;
+            ChkSmartAdaptation.IsChecked = state.IsSmartAdaptation;
+            TxtMake.Text = state.TxtMake;
+            TxtModel.Text = state.TxtModel;
+            TxtLens.Text = state.TxtLens;
+            TxtFocal.Text = state.TxtFocal;
+            TxtFNumber.Text = state.TxtFNumber;
+            TxtShutter.Text = state.TxtShutter;
+            TxtISO.Text = state.TxtISO;
+        }
+        finally
+        {
+            _isRestoringUi = false;
+        }
+    }
+
+    private void SelectTemplate(TemplateModel tmpl)
+    {
+        _isRestoringUi = true;
+        try
+        {
+            CmbTemplates.SelectedItem = tmpl;
+        }
+        finally
+        {
+            _isRestoringUi = false;
+        }
+    }
+
+    private void ApplyTemplateValues(TemplateModel tmpl)
+    {
+        double factor = GetTemplateScaleFactor(tmpl);
+
+        _isRestoringUi = true;
+        try
+        {
+            ChkSyncVertical.IsChecked = tmpl.IsSyncVertical;
+            ChkSyncHorizontal.IsChecked = tmpl.IsSyncHorizontal;
+
+            SliderScale.Value = ClampToSliderRange(SliderScale, tmpl.Scale);
+            SliderTopMargin.Value = ClampToSliderRange(SliderTopMargin, tmpl.MarginTop * factor);
+            SliderBottomMargin.Value = ClampToSliderRange(SliderBottomMargin, tmpl.MarginBottom * factor);
+            SliderLeftMargin.Value = ClampToSliderRange(SliderLeftMargin, tmpl.MarginLeft * factor);
+            SliderRightMargin.Value = ClampToSliderRange(SliderRightMargin, tmpl.MarginRight * factor);
+            SliderCorner.Value = ClampToSliderRange(SliderCorner, tmpl.Corner * factor);
+            SliderShadow.Value = ClampToSliderRange(SliderShadow, tmpl.Shadow * factor);
+            SliderTextSpacing.Value = ClampToSliderRange(SliderTextSpacing, tmpl.Spacing * factor);
+            SliderLogoOffsetY.Value = ClampToSliderRange(SliderLogoOffsetY, tmpl.LogoOffsetY * factor);
+
+            if (_currentMode == RenderMode.Border)
+            {
+                ApplyBorderTemplateTweaks(tmpl);
+            }
+
+            ChkMarginPriority.IsChecked = tmpl.IsMarginPriority;
+            ChkSmartAdaptation.IsChecked = _currentMode == RenderMode.Overlay ? true : tmpl.IsSmartAdaptation;
+
+            TxtMake.Text = tmpl.DefaultMake;
+            TxtModel.Text = tmpl.DefaultModel;
+            TxtLens.Text = tmpl.DefaultLens;
+            TxtFocal.Text = tmpl.DefaultFocal;
+            TxtFNumber.Text = tmpl.DefaultFNumber;
+            TxtShutter.Text = tmpl.DefaultShutter;
+            TxtISO.Text = tmpl.DefaultISO;
+        }
+        finally
+        {
+            _isRestoringUi = false;
+        }
+
+        _currentLayout = tmpl.Layout;
+        _currentTemplate = tmpl;
+
+        if (_currentMode == RenderMode.Overlay)
+        {
+            ApplyOverlayVisualDefaults();
+        }
+
+        UpdateStatus();
+    }
+
+    private double GetTemplateScaleFactor(TemplateModel tmpl)
+    {
+        if (tmpl.ReferenceShortEdge <= 0 || _currentImage == null)
+        {
+            return 1.0;
+        }
+
+        double shortEdge = Math.Min(_currentImage.PixelWidth, _currentImage.PixelHeight);
+        return Math.Clamp(shortEdge / tmpl.ReferenceShortEdge, 0.1, 10.0);
+    }
+
+    private void ApplyBorderTemplateTweaks(TemplateModel tmpl)
+    {
+        if (_currentImage == null)
+        {
+            return;
+        }
+
+        if (tmpl.Name == "哈苏水印边框")
+        {
+            SliderTopMargin.Value = ClampToSliderRange(SliderTopMargin, SliderTopMargin.Value * 1.5);
+            SliderBottomMargin.Value = ClampToSliderRange(SliderBottomMargin, SliderBottomMargin.Value * 1.5);
+
             double wImg = _currentImage.PixelWidth;
             double hImg = _currentImage.PixelHeight;
             double wBorderPred = wImg + SliderLeftMargin.Value + SliderRightMargin.Value;
             double hBorderPred = hImg + SliderTopMargin.Value + SliderBottomMargin.Value;
             double refDim = Math.Min(wBorderPred, hBorderPred);
-            double factorLogo = (tmpl.ReferenceShortEdge > 0) ? refDim / tmpl.ReferenceShortEdge : 1.0;
-            double baseLogoPx = 32;
-            double logoHeight = baseLogoPx * factorLogo;
+            double factorLogo = tmpl.ReferenceShortEdge > 0 ? refDim / tmpl.ReferenceShortEdge : 1.0;
+            double logoHeight = 32 * factorLogo;
             double topMin = logoHeight * 2.0 + 10;
             double paramFont = refDim * 0.018;
             double bottomMin = paramFont * 2.5 + 10;
-            if (SliderTopMargin.Value < topMin) SliderTopMargin.Value = topMin;
-            if (SliderBottomMargin.Value < bottomMin) SliderBottomMargin.Value = bottomMin;
+
+            SliderTopMargin.Value = ClampToSliderRange(SliderTopMargin, Math.Max(SliderTopMargin.Value, topMin));
+            SliderBottomMargin.Value = ClampToSliderRange(SliderBottomMargin, Math.Max(SliderBottomMargin.Value, bottomMin));
+
             double sideMin = paramFont * 2.0;
             double lr = Math.Max(Math.Max(SliderLeftMargin.Value, SliderRightMargin.Value), sideMin);
-            SliderLeftMargin.Value = lr;
-            SliderRightMargin.Value = lr;
+            SliderLeftMargin.Value = ClampToSliderRange(SliderLeftMargin, lr);
+            SliderRightMargin.Value = ClampToSliderRange(SliderRightMargin, lr);
         }
-        
-        
-        // 哈苏居中：根据样例自动设置边距（横/竖）
-        if (tmpl.Name == "哈苏水印居中" && _currentImage != null)
+
+        if (tmpl.Name == "哈苏水印居中")
         {
             double w = _currentImage.PixelWidth;
             double h = _currentImage.PixelHeight;
             bool portrait = h > w;
-            
             double shortEdge = Math.Min(w, h);
-            double edgeF = portrait ? 0.018 : 0.022; // 统一细边
-            double bottomF = edgeF; // 与其它边一致
-            
-            SliderTopMargin.Value = shortEdge * edgeF;
-            SliderBottomMargin.Value = shortEdge * bottomF;
-            SliderLeftMargin.Value = shortEdge * edgeF;
-            SliderRightMargin.Value = shortEdge * edgeF;
-            
-            double logoOffsetF = portrait ? 0.035 : 0.030; // 竖图略微提高 Logo 高度
-            SliderLogoOffsetY.Value = shortEdge * logoOffsetF;
-        }
-        
-        // 更新选项
-        ChkMarginPriority.IsChecked = tmpl.IsMarginPriority;
-        ChkSmartAdaptation.IsChecked = tmpl.IsSmartAdaptation;
-        
-        // 更新自定义文本默认值
-        TxtMake.Text = tmpl.DefaultMake;
-        TxtModel.Text = tmpl.DefaultModel;
-        TxtLens.Text = tmpl.DefaultLens;
-        TxtFocal.Text = tmpl.DefaultFocal;
-        TxtFNumber.Text = tmpl.DefaultFNumber;
-        TxtShutter.Text = tmpl.DefaultShutter;
-        TxtISO.Text = tmpl.DefaultISO;
-        
-        _currentLayout = tmpl.Layout;
-    }
+            double edgeFactor = portrait ? 0.018 : 0.022;
+            double logoOffsetFactor = portrait ? 0.035 : 0.030;
 
-    private void CmbTemplates_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (CmbTemplates.SelectedItem is TemplateModel tmpl)
-        {
-            _currentTemplate = tmpl;
-            ApplyTemplateValues(tmpl);
-            
-            if (_currentImage != null)
-            {
-                UpdatePreview();
-            }
-        }
-    }
-    
-    // 滑块同步逻辑
-    private void SliderTopMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (ChkSyncVertical?.IsChecked == true && SliderBottomMargin != null)
-        {
-             // 避免相等时的循环触发
-             if (Math.Abs(SliderBottomMargin.Value - e.NewValue) > 0.01)
-                SliderBottomMargin.Value = e.NewValue;
+            SliderTopMargin.Value = ClampToSliderRange(SliderTopMargin, shortEdge * edgeFactor);
+            SliderBottomMargin.Value = ClampToSliderRange(SliderBottomMargin, shortEdge * edgeFactor);
+            SliderLeftMargin.Value = ClampToSliderRange(SliderLeftMargin, shortEdge * edgeFactor);
+            SliderRightMargin.Value = ClampToSliderRange(SliderRightMargin, shortEdge * edgeFactor);
+            SliderLogoOffsetY.Value = ClampToSliderRange(SliderLogoOffsetY, shortEdge * logoOffsetFactor);
         }
     }
 
-    private void SliderBottomMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private void ApplyOverlayVisualDefaults()
     {
-        if (ChkSyncVertical?.IsChecked == true && SliderTopMargin != null)
+        if (_currentMode != RenderMode.Overlay || _currentImage == null)
         {
-             if (Math.Abs(SliderTopMargin.Value - e.NewValue) > 0.01)
-                SliderTopMargin.Value = e.NewValue;
+            return;
         }
-    }
-    
-    private void ChkSyncVertical_Checked(object sender, RoutedEventArgs e)
-    {
-        // 立即同步
-        if (SliderBottomMargin != null && SliderTopMargin != null)
-             SliderBottomMargin.Value = SliderTopMargin.Value;
-    }
 
-    private void SliderLeftMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (ChkSyncHorizontal?.IsChecked == true && SliderRightMargin != null)
+        double shortEdge = Math.Min(_currentImage.PixelWidth, _currentImage.PixelHeight);
+        if (shortEdge <= 0)
         {
-             if (Math.Abs(SliderRightMargin.Value - e.NewValue) > 0.01)
-                SliderRightMargin.Value = e.NewValue;
+            return;
         }
+
+        double referenceShortEdge = _currentTemplate?.ReferenceShortEdge > 0
+            ? _currentTemplate.ReferenceShortEdge
+            : DefaultOverlayStyleReferenceShortEdge;
+        double factor = Math.Clamp(shortEdge / referenceShortEdge, 0.35, 3.0);
+
+        double baseCorner = _currentTemplate?.Corner > 0 ? _currentTemplate.Corner : DefaultOverlayCornerRadius;
+        double baseShadow = _currentTemplate?.Shadow > 0 ? _currentTemplate.Shadow : DefaultOverlayShadowSize;
+        double corner = Math.Clamp(Math.Round(baseCorner * factor), MinOverlayCornerRadius, MaxOverlayCornerRadius);
+        double shadow = Math.Clamp(Math.Round(baseShadow * factor), MinOverlayShadowSize, MaxOverlayShadowSize);
+
+        SliderCorner.Value = ClampToSliderRange(SliderCorner, corner);
+        SliderShadow.Value = ClampToSliderRange(SliderShadow, shadow);
     }
 
-    private void SliderRightMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private static double ClampToSliderRange(Slider slider, double value)
     {
-        if (ChkSyncHorizontal?.IsChecked == true && SliderLeftMargin != null)
+        return Math.Clamp(value, slider.Minimum, slider.Maximum);
+    }
+
+    private void UpdateModeUi()
+    {
+        string modeLabel = _currentMode == RenderMode.Border ? "边框" : "Overlay";
+        TxtModeDescription.Text = $"当前模式：{modeLabel}";
+        BtnSave.Content = _currentMode == RenderMode.Border ? "保存边框图片" : "保存 Overlay 图片";
+        Title = _currentMode == RenderMode.Border
+            ? "Watermark Border Generator"
+            : "Watermark Border Generator - Overlay";
+    }
+
+    private RenderContext CreateRenderContext()
+    {
+        return new RenderContext
         {
-             if (Math.Abs(SliderLeftMargin.Value - e.NewValue) > 0.01)
-                SliderLeftMargin.Value = e.NewValue;
-        }
-    }
-    
-    private void ChkSyncHorizontal_Checked(object sender, RoutedEventArgs e)
-    {
-        // 立即同步
-        if (SliderRightMargin != null && SliderLeftMargin != null)
-             SliderRightMargin.Value = SliderLeftMargin.Value;
-    }
-    
-
-    private void BtnOpen_Click(object sender, RoutedEventArgs e)
-    {
-        OpenFileDialog openFileDialog = new OpenFileDialog
-        {
-            Filter = "Image files (*.jpg, *.jpeg, *.png, *.bmp)|*.jpg;*.jpeg;*.png;*.bmp|All files (*.*)|*.*"
-        };
-        if (openFileDialog.ShowDialog() == true)
-        {
-            LoadImage(openFileDialog.FileName);
-        }
-    }
-
-    private void BtnOpenOverlay_Click(object sender, RoutedEventArgs e)
-    {
-        var win = new OverlayWindow();
-        win.Show();
-    }
-    private void Image_Drop(object sender, DragEventArgs e)
-    {
-        if (e.Data.GetDataPresent(DataFormats.FileDrop))
-        {
-            string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
-            if (files.Length > 0)
-            {
-                LoadImage(files[0]);
-            }
-        }
-    }
-
-    private void Image_DragOver(object sender, DragEventArgs e)
-    {
-        e.Effects = DragDropEffects.Copy;
-        e.Handled = true;
-    }
-
-    private void LoadImage(string path)
-    {
-        try
-        {
-            _currentFilePath = path;
-            
-            // 加载图像（使用 OnLoad 以便文件解锁）
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.UriSource = new Uri(path);
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat | BitmapCreateOptions.IgnoreColorProfile;
-            bitmap.EndInit();
-            bitmap.Freeze();
-
-            _currentImage = bitmap;
-            // 读取 EXIF 元数据
-            _currentExif = ExifService.ReadExifData(path);
-            
-            // 按需重新应用自适应模板参数
-            if (_currentTemplate != null && _currentTemplate.ReferenceShortEdge > 0)
-            {
-                ApplyTemplateValues(_currentTemplate);
-            }
-            
-            UpdatePreview();
-            TxtStatus.Text = $"Loaded: {Path.GetFileName(path)} | {_currentExif.Model}";
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Error loading image: {ex.Message}");
-        }
-    }
-
-    
-
-    private void BtnUpdate_Click(object sender, RoutedEventArgs e)
-    {
-        if (_currentImage != null)
-        {
-            UpdatePreview();
-        }
-    }
-
-    private void UpdatePreview()
-    {
-        if (_currentImage == null) return;
-        // 若性能较慢可考虑加入防抖，但单张渲染通常即时更新即可
-        var ctx = new RenderContext
-        {
-            CurrentImage = _currentImage,
+            CurrentImage = _currentImage!,
             Exif = _currentExif,
             Template = _currentTemplate,
             Layout = _currentLayout,
@@ -385,6 +591,7 @@ public partial class MainWindow : Window
             ShadowSize = SliderShadow.Value,
             TextSpacing = SliderTextSpacing.Value,
             LogoOffsetY = SliderLogoOffsetY.Value,
+            OutputScale = 1.0,
             TxtMake = TxtMake.Text,
             TxtModel = TxtModel.Text,
             TxtLens = TxtLens.Text,
@@ -393,67 +600,258 @@ public partial class MainWindow : Window
             TxtShutter = TxtShutter.Text,
             TxtISO = TxtISO.Text
         };
-        var finalImage = RenderingService.RenderFinalImage(ctx);
-        ImgPreview.Source = finalImage;
     }
 
+    private RenderTargetBitmap RenderCurrentMode(RenderContext ctx)
+    {
+        return _currentMode == RenderMode.Border
+            ? RenderingService.RenderFinalImage(ctx)
+            : RenderingService.RenderOverlayImage(ctx);
+    }
 
+    private void UpdateStatus()
+    {
+        string modeLabel = _currentMode == RenderMode.Border ? "边框" : "Overlay";
+        if (_currentImage == null)
+        {
+            TxtStatus.Text = $"模式：{modeLabel} | 未加载图片";
+            return;
+        }
 
+        string model = string.IsNullOrWhiteSpace(_currentExif?.Model) ? "Unknown Model" : _currentExif!.Model!;
+        string template = _currentTemplate?.Name ?? "未选择模板";
+        string status = $"模式：{modeLabel} | Loaded: {Path.GetFileName(_currentFilePath)} | {model} | 模板：{template}";
+        if (_currentMode == RenderMode.Overlay)
+        {
+            status += $" | Corner {SliderCorner.Value:N0} | Shadow {SliderShadow.Value:N0}";
+        }
+
+        TxtStatus.Text = status;
+    }
+
+    private void CmbTemplates_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isRestoringUi)
+        {
+            return;
+        }
+
+        if (CmbTemplates.SelectedItem is not TemplateModel tmpl)
+        {
+            return;
+        }
+
+        _currentTemplate = tmpl;
+        ApplyTemplateValues(tmpl);
+
+        if (_currentImage != null)
+        {
+            UpdatePreview();
+        }
+    }
+
+    private void RadioModeBorder_Checked(object sender, RoutedEventArgs e)
+    {
+        SwitchMode(RenderMode.Border);
+    }
+
+    private void RadioModeOverlay_Checked(object sender, RoutedEventArgs e)
+    {
+        SwitchMode(RenderMode.Overlay);
+    }
+
+    private void SliderTopMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isRestoringUi || ChkSyncVertical == null || SliderBottomMargin == null)
+        {
+            return;
+        }
+
+        if (ChkSyncVertical.IsChecked == true && Math.Abs(SliderBottomMargin.Value - e.NewValue) > 0.01)
+        {
+            SliderBottomMargin.Value = e.NewValue;
+        }
+    }
+
+    private void SliderBottomMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isRestoringUi || ChkSyncVertical == null || SliderTopMargin == null)
+        {
+            return;
+        }
+
+        if (ChkSyncVertical.IsChecked == true && Math.Abs(SliderTopMargin.Value - e.NewValue) > 0.01)
+        {
+            SliderTopMargin.Value = e.NewValue;
+        }
+    }
+
+    private void ChkSyncVertical_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_isRestoringUi || SliderTopMargin == null || SliderBottomMargin == null)
+        {
+            return;
+        }
+
+        SliderBottomMargin.Value = SliderTopMargin.Value;
+    }
+
+    private void SliderLeftMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isRestoringUi || ChkSyncHorizontal == null || SliderRightMargin == null)
+        {
+            return;
+        }
+
+        if (ChkSyncHorizontal.IsChecked == true && Math.Abs(SliderRightMargin.Value - e.NewValue) > 0.01)
+        {
+            SliderRightMargin.Value = e.NewValue;
+        }
+    }
+
+    private void SliderRightMargin_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isRestoringUi || ChkSyncHorizontal == null || SliderLeftMargin == null)
+        {
+            return;
+        }
+
+        if (ChkSyncHorizontal.IsChecked == true && Math.Abs(SliderLeftMargin.Value - e.NewValue) > 0.01)
+        {
+            SliderLeftMargin.Value = e.NewValue;
+        }
+    }
+
+    private void ChkSyncHorizontal_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_isRestoringUi || SliderLeftMargin == null || SliderRightMargin == null)
+        {
+            return;
+        }
+
+        SliderRightMargin.Value = SliderLeftMargin.Value;
+    }
+
+    private void BtnOpen_Click(object sender, RoutedEventArgs e)
+    {
+        OpenFileDialog openFileDialog = new OpenFileDialog
+        {
+            Filter = "Image files (*.jpg, *.jpeg, *.png, *.bmp)|*.jpg;*.jpeg;*.png;*.bmp|All files (*.*)|*.*"
+        };
+
+        if (openFileDialog.ShowDialog() == true)
+        {
+            LoadImage(openFileDialog.FileName);
+        }
+    }
+
+    private void Image_Drop(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            return;
+        }
+
+        string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
+        if (files.Length > 0)
+        {
+            LoadImage(files[0]);
+        }
+    }
+
+    private void Image_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = DragDropEffects.Copy;
+        e.Handled = true;
+    }
+
+    private void LoadImage(string path)
+    {
+        try
+        {
+            _currentFilePath = path;
+
+            BitmapImage bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.UriSource = new Uri(path);
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat | BitmapCreateOptions.IgnoreColorProfile;
+            bitmap.EndInit();
+            bitmap.Freeze();
+
+            _currentImage = bitmap;
+            _currentExif = ExifService.ReadExifData(path);
+
+            if (_currentTemplate != null && (_currentTemplate.ReferenceShortEdge > 0 || _currentMode == RenderMode.Overlay))
+            {
+                ApplyTemplateValues(_currentTemplate);
+            }
+
+            UpdatePreview();
+            UpdateStatus();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error loading image: {ex.Message}");
+        }
+    }
+
+    private void BtnUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentImage != null)
+        {
+            UpdatePreview();
+        }
+    }
+
+    private void UpdatePreview()
+    {
+        if (_currentImage == null)
+        {
+            return;
+        }
+
+        RenderContext ctx = CreateRenderContext();
+        ImgPreview.Source = RenderCurrentMode(ctx);
+    }
 
     private void BtnSave_Click(object sender, RoutedEventArgs e)
     {
-        if (_currentImage == null) return;
+        if (_currentImage == null)
+        {
+            return;
+        }
 
+        string prefix = _currentMode == RenderMode.Border ? "Frame" : "Overlay";
         SaveFileDialog saveFileDialog = new SaveFileDialog
         {
             Filter = "JPEG Image|*.jpg",
-            FileName = $"Frame_{Path.GetFileNameWithoutExtension(_currentFilePath)}{(_currentTemplate != null ? $"_{_currentTemplate.Name}" : $"_{_currentLayout}")}.jpg"
+            FileName = $"{prefix}_{Path.GetFileNameWithoutExtension(_currentFilePath)}{(_currentTemplate != null ? $"_{_currentTemplate.Name}" : $"_{_currentLayout}")}.jpg"
         };
 
-        if (saveFileDialog.ShowDialog() == true)
+        if (saveFileDialog.ShowDialog() != true)
         {
-            try
-            {
-                var ctx = new RenderContext
-                {
-                    CurrentImage = _currentImage,
-                    Exif = _currentExif,
-                    Template = _currentTemplate,
-                    Layout = _currentLayout,
-                    IsMarginPriority = ChkMarginPriority.IsChecked == true,
-                    IsSmartAdaptation = ChkSmartAdaptation.IsChecked == true,
-                    ScalePercent = SliderScale.Value,
-                    MarginTop = SliderTopMargin.Value,
-                    MarginBottom = SliderBottomMargin.Value,
-                    MarginLeft = SliderLeftMargin.Value,
-                    MarginRight = SliderRightMargin.Value,
-                    CornerRadius = SliderCorner.Value,
-                    ShadowSize = SliderShadow.Value,
-                    TextSpacing = SliderTextSpacing.Value,
-                    LogoOffsetY = SliderLogoOffsetY.Value,
-                    TxtMake = TxtMake.Text,
-                    TxtModel = TxtModel.Text,
-                    TxtLens = TxtLens.Text,
-                    TxtFocal = TxtFocal.Text,
-                    TxtFNumber = TxtFNumber.Text,
-                    TxtShutter = TxtShutter.Text,
-                    TxtISO = TxtISO.Text
-                };
-                var final = RenderingService.RenderFinalImage(ctx);
-                JpegBitmapEncoder encoder = new JpegBitmapEncoder();
-                encoder.QualityLevel = 100;
-                encoder.Frames.Add(BitmapFrame.Create(final));
+            return;
+        }
 
-                using (FileStream fs = new FileStream(saveFileDialog.FileName, FileMode.Create))
-                {
-                    encoder.Save(fs);
-                }
-                MessageBox.Show("Saved successfully!");
-            }
-            catch (Exception ex)
+        try
+        {
+            RenderContext ctx = CreateRenderContext();
+            RenderTargetBitmap final = RenderCurrentMode(ctx);
+            JpegBitmapEncoder encoder = new JpegBitmapEncoder
             {
-                MessageBox.Show($"Error saving: {ex.Message}");
-            }
+                QualityLevel = 100
+            };
+            encoder.Frames.Add(BitmapFrame.Create(final));
+
+            using FileStream fs = new FileStream(saveFileDialog.FileName, FileMode.Create);
+            encoder.Save(fs);
+
+            MessageBox.Show("Saved successfully!");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Error saving: {ex.Message}");
         }
     }
 }

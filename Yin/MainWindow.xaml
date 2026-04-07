@@ -19,6 +19,16 @@
                 <StackPanel>
                     <TextBlock Text="设置" FontSize="20" FontWeight="Bold" Margin="0,0,0,20"/>
 
+                    <GroupBox Header="模式" Margin="0,0,0,15">
+                        <StackPanel Margin="10">
+                            <TextBlock x:Name="TxtModeDescription" Text="当前模式：边框" FontWeight="SemiBold"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <RadioButton x:Name="RadioModeBorder" Content="边框" GroupName="RenderMode" Checked="RadioModeBorder_Checked" Margin="0,0,20,0"/>
+                                <RadioButton x:Name="RadioModeOverlay" Content="Overlay" GroupName="RenderMode" Checked="RadioModeOverlay_Checked"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </GroupBox>
+
                     <!-- Template Selection -->
                     <GroupBox Header="模板" Margin="0,0,0,15">
                         <StackPanel Margin="10">
@@ -31,7 +41,6 @@
                         <StackPanel Margin="10">
                             <Button x:Name="BtnOpen" Content="打开图片" Height="30" Click="BtnOpen_Click" Margin="0,0,0,10"/>
                             <TextBlock Text="或将图片拖入右侧区域" Foreground="Gray" TextWrapping="Wrap" FontSize="11" HorizontalAlignment="Center"/>
-                            <Button x:Name="BtnOpenOverlay" Content="打开 Overlay 模式" Height="30" Click="BtnOpenOverlay_Click" Margin="0,10,0,0"/>
                         </StackPanel>
                     </GroupBox>
 
