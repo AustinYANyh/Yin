@@ -15,12 +15,23 @@ namespace Yin.Services;
 /// </summary>
 public static class RenderingService
 {
+    private static readonly Uri SignatureFontBaseUri = new("pack://application:,,,/Yin;component/Source/", UriKind.Absolute);
+    private const string SignatureFontFamilyPath = "./#方正字迹-周东芬草书 简";
+    private const string SignatureFallbackFontFamily = "STXingkai";
+    private const string SignatureLine1Text = "青山有思，白鹤忘机";
+    private const string SignatureLine3Prefix = "\u201C唯有通透处事，方能从容自在\u201D";
+
     /// <summary>
     /// 生成最终图像（包含边框、品牌/参数、阴影与圆角等）
     /// </summary>
     public static RenderTargetBitmap RenderFinalImage(RenderContext ctx)
     {
         if (ctx.CurrentImage == null) throw new ArgumentNullException(nameof(ctx.CurrentImage));
+        if (ctx.Layout == LayoutMode.SignatureWatermark_Bottom_Centered)
+        {
+            return RenderSignatureWatermarkImage(ctx);
+        }
+
         double scalePercent = ctx.ScalePercent / 100.0;
         double marginTop = ctx.MarginTop;
         double marginBottom = ctx.MarginBottom;
@@ -363,6 +374,155 @@ public static class RenderingService
         }
     }
 
+    private static FontFamily GetSignatureFontFamily()
+    {
+        try
+        {
+            return new FontFamily(SignatureFontBaseUri, SignatureFontFamilyPath);
+        }
+        catch
+        {
+            return new FontFamily(SignatureFallbackFontFamily);
+        }
+    }
+
+    private static string GetPreferredValue(string? exifValue, string fallbackValue)
+    {
+        return !string.IsNullOrWhiteSpace(exifValue) ? exifValue : (fallbackValue ?? "");
+    }
+
+    private static string BuildSignatureLine2(RenderContext ctx)
+    {
+        string model = GetPreferredValue(ctx.Exif?.Model, ctx.TxtModel).Trim();
+        string lens = GetPreferredValue(ctx.Exif?.LensModel, ctx.TxtLens).Trim();
+
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            model = "CAMERA";
+        }
+
+        if (string.IsNullOrWhiteSpace(lens))
+        {
+            lens = "LENS";
+        }
+
+        if (!string.IsNullOrWhiteSpace(model) && !string.IsNullOrWhiteSpace(lens))
+        {
+            return $"{model} | {lens}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            return model;
+        }
+
+        if (!string.IsNullOrWhiteSpace(lens))
+        {
+            return lens;
+        }
+
+        return "Unknown Model";
+    }
+
+    private static string BuildSignatureLine3(RenderContext ctx)
+    {
+        string location = GetPreferredValue(ctx.Exif?.LocationText, ctx.TxtLocation).Trim();
+        return string.IsNullOrWhiteSpace(location)
+            ? SignatureLine3Prefix
+            : $"{SignatureLine3Prefix}\u3000{location}";
+    }
+
+    private static RenderTargetBitmap RenderSignatureWatermarkImage(RenderContext ctx)
+    {
+        if (ctx.CurrentImage == null) throw new ArgumentNullException(nameof(ctx.CurrentImage));
+
+        double width = ctx.CurrentImage.PixelWidth;
+        double height = ctx.CurrentImage.PixelHeight;
+        double shortEdge = Math.Min(width, height);
+        double bottomOffset = Math.Clamp(ctx.MarginBottom, shortEdge * 0.03, shortEdge * 0.18);
+
+        Grid grid = new Grid
+        {
+            Width = width,
+            Height = height,
+            Background = Brushes.Transparent
+        };
+
+        Image image = new Image
+        {
+            Source = ctx.CurrentImage,
+            Stretch = Stretch.Fill,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+        grid.Children.Add(image);
+
+        StackPanel signatureContainer = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, 0, bottomOffset)
+        };
+
+        DropShadowEffect sharedGlow = new DropShadowEffect
+        {
+            Color = Colors.Black,
+            BlurRadius = shortEdge * 0.012,
+            ShadowDepth = 0,
+            Opacity = 0.85
+        };
+
+        TextBlock line1 = new TextBlock
+        {
+            Text = SignatureLine1Text,
+            FontFamily = GetSignatureFontFamily(),
+            FontSize = shortEdge * 0.036,
+            Foreground = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextAlignment = TextAlignment.Center,
+            Margin = new Thickness(0, 0, 0, shortEdge * 0.006),
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new ScaleTransform(0.9, 1.0)
+        };
+
+        TextBlock line2 = new TextBlock
+        {
+            Text = BuildSignatureLine2(ctx),
+            FontFamily = new FontFamily("Bahnschrift"),
+            FontWeight = FontWeights.SemiBold,
+            FontSize = shortEdge * 0.017,
+            Foreground = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextAlignment = TextAlignment.Center,
+            Margin = new Thickness(0, 0, 0, shortEdge * 0.009)
+        };
+
+        TextBlock line3 = new TextBlock
+        {
+            Text = BuildSignatureLine3(ctx),
+            FontFamily = new FontFamily("Microsoft YaHei"),
+            FontSize = shortEdge * 0.0168,
+            Foreground = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextAlignment = TextAlignment.Center
+        };
+
+        signatureContainer.Children.Add(line1);
+        signatureContainer.Children.Add(line2);
+        signatureContainer.Children.Add(line3);
+        grid.Children.Add(signatureContainer);
+
+        grid.Measure(new Size(width, height));
+        grid.Arrange(new Rect(0, 0, width, height));
+        grid.UpdateLayout();
+
+        RenderTargetBitmap rtb = new RenderTargetBitmap((int)width, (int)height, 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(grid);
+        return rtb;
+    }
+
     private static RenderTargetBitmap RenderUsingVisualTree(
         RenderContext ctx,
         double wImg, double hImg, double wBorder, double hBorder,
@@ -414,7 +574,7 @@ public static class RenderingService
         else if (brandText.Contains("FUJI")) brandText = "FUJIFILM";
         else if (brandText.Contains("LEICA")) brandText = "LEICA";
 
-        FrameworkElement brandElement = null;
+        FrameworkElement? brandElement = null;
 
         if (ctx.Template != null && !string.IsNullOrEmpty(ctx.Template.ForceLogoPath))
         {
@@ -570,7 +730,6 @@ public static class RenderingService
         }
         else if (ctx.Layout == LayoutMode.TwoLines_Bottom_Centered)
         {
-            bool isOverlay = false;
             Brush textBrush = new SolidColorBrush(Color.FromRgb(30, 30, 30));
             Brush subTextBrush = new SolidColorBrush(Color.FromRgb(80, 80, 80));
             bool showSmartPanel = false;
@@ -706,7 +865,6 @@ public static class RenderingService
                 grid.Children.Add(spContainer);
             }
         }
-
         if (ctx.Layout == LayoutMode.BrandTop_ExifBottom && ctx.Exif != null)
         {
             string focal = !string.IsNullOrWhiteSpace(ctx.TxtFocal) ? ctx.TxtFocal : (ctx.Exif.FocalLength);

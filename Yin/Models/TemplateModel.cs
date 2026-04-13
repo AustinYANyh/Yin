@@ -11,7 +11,9 @@ public enum LayoutMode
     /// <summary>品牌居底部居中</summary>
     BrandBottom_Centered,
     /// <summary>底部两行（机身 + 参数）</summary>
-    TwoLines_Bottom_Centered
+    TwoLines_Bottom_Centered,
+    /// <summary>底部居中签名水印（三行文案）</summary>
+    SignatureWatermark_Bottom_Centered
 }
 
 /// <summary>
@@ -65,6 +67,8 @@ public class TemplateModel
     public string DefaultShutter { get; set; } = "";
     /// <summary>默认 ISO</summary>
     public string DefaultISO { get; set; } = "";
+    /// <summary>默认地点</summary>
+    public string DefaultLocation { get; set; } = "";
     /// <summary>
     /// 参考短边像素（用于跨分辨率自适应缩放；短边=宽高中的较小值）
     /// </summary>

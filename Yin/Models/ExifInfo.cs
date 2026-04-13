@@ -21,6 +21,12 @@ public class ExifInfo
     public string ISOSpeed { get; set; } = "";
     /// <summary>镜头型号（Lens Model）</summary>
     public string LensModel { get; set; } = "";
+    /// <summary>识别出的地点文本</summary>
+    public string LocationText { get; set; } = "";
+    /// <summary>GPS 纬度</summary>
+    public double? Latitude { get; set; }
+    /// <summary>GPS 经度</summary>
+    public double? Longitude { get; set; }
     /// <summary>拍摄时间</summary>
     public DateTime DateTaken { get; set; }
 }

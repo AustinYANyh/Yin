@@ -163,6 +163,9 @@
                                             <TextBox x:Name="TxtISO" Margin="0,0,0,5"/>
                                         </StackPanel>
                                     </Grid>
+
+                                    <TextBlock Text="地点 (Location)" Margin="0,0,0,2"/>
+                                    <TextBox x:Name="TxtLocation" Margin="0,0,0,5"/>
                                     
                                     <TextBlock Text="说明：若无法读取EXIF，将使用上述值。" Foreground="Gray" FontSize="10" TextWrapping="Wrap"/>
                                 </StackPanel>

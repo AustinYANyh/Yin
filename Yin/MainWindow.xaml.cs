@@ -51,6 +51,7 @@ public partial class MainWindow : Window
         public string TxtFNumber { get; init; } = "";
         public string TxtShutter { get; init; } = "";
         public string TxtISO { get; init; } = "";
+        public string TxtLocation { get; init; } = "";
     }
 
     private BitmapImage? _currentImage;
@@ -163,6 +164,35 @@ public partial class MainWindow : Window
             DefaultFNumber = "f/2.8",
             DefaultShutter = "1/800",
             DefaultISO = "100",
+            ReferenceShortEdge = 1800
+        });
+
+        _borderTemplates.Add(new TemplateModel
+        {
+            Name = "签名水印",
+            Scale = 100,
+            MarginTop = 0,
+            MarginBottom = 64,
+            MarginLeft = 0,
+            MarginRight = 0,
+            Corner = 0,
+            Shadow = 0,
+            Spacing = 5,
+            Layout = LayoutMode.SignatureWatermark_Bottom_Centered,
+            IsMarginPriority = true,
+            IsSyncVertical = false,
+            IsSyncHorizontal = true,
+            IsSmartAdaptation = false,
+            ForceLogoPath = null,
+            LogoOffsetY = 0,
+            DefaultMake = "SONY",
+            DefaultModel = "ILCE-7RM5",
+            DefaultLens = "FE 70-200mm F2.8 GM OSS II",
+            DefaultFocal = "70mm",
+            DefaultFNumber = "f/2.8",
+            DefaultShutter = "1/800",
+            DefaultISO = "100",
+            DefaultLocation = "上海市",
             ReferenceShortEdge = 1800
         });
 
@@ -365,7 +395,8 @@ public partial class MainWindow : Window
             TxtFocal = TxtFocal.Text,
             TxtFNumber = TxtFNumber.Text,
             TxtShutter = TxtShutter.Text,
-            TxtISO = TxtISO.Text
+            TxtISO = TxtISO.Text,
+            TxtLocation = TxtLocation.Text
         };
     }
 
@@ -398,6 +429,7 @@ public partial class MainWindow : Window
             TxtFNumber.Text = state.TxtFNumber;
             TxtShutter.Text = state.TxtShutter;
             TxtISO.Text = state.TxtISO;
+            TxtLocation.Text = state.TxtLocation;
         }
         finally
         {
@@ -453,6 +485,7 @@ public partial class MainWindow : Window
             TxtFNumber.Text = tmpl.DefaultFNumber;
             TxtShutter.Text = tmpl.DefaultShutter;
             TxtISO.Text = tmpl.DefaultISO;
+            TxtLocation.Text = tmpl.DefaultLocation;
         }
         finally
         {
@@ -528,6 +561,16 @@ public partial class MainWindow : Window
             SliderRightMargin.Value = ClampToSliderRange(SliderRightMargin, shortEdge * edgeFactor);
             SliderLogoOffsetY.Value = ClampToSliderRange(SliderLogoOffsetY, shortEdge * logoOffsetFactor);
         }
+
+        if (tmpl.Name == "签名水印")
+        {
+            double shortEdge = Math.Min(_currentImage.PixelWidth, _currentImage.PixelHeight);
+            double minBottom = Math.Clamp(shortEdge * 0.045, 36, 96);
+            SliderTopMargin.Value = ClampToSliderRange(SliderTopMargin, 0);
+            SliderLeftMargin.Value = ClampToSliderRange(SliderLeftMargin, 0);
+            SliderRightMargin.Value = ClampToSliderRange(SliderRightMargin, 0);
+            SliderBottomMargin.Value = ClampToSliderRange(SliderBottomMargin, Math.Max(SliderBottomMargin.Value, minBottom));
+        }
     }
 
     private void ApplyOverlayVisualDefaults()
@@ -598,7 +641,8 @@ public partial class MainWindow : Window
             TxtFocal = TxtFocal.Text,
             TxtFNumber = TxtFNumber.Text,
             TxtShutter = TxtShutter.Text,
-            TxtISO = TxtISO.Text
+            TxtISO = TxtISO.Text,
+            TxtLocation = TxtLocation.Text
         };
     }
 
