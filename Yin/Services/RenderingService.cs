@@ -461,20 +461,20 @@ public static class RenderingService
             Orientation = Orientation.Vertical,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(0, 0, 0, bottomOffset)
+            Margin = new Thickness(shortEdge * 0.01, 0, 0, bottomOffset)
         };
 
         TextBlock line1 = new TextBlock
         {
             Text = SignatureLine1Text,
             FontFamily = GetSignatureFontFamily(),
-            FontSize = shortEdge * 0.038,
+            FontSize = shortEdge * 0.0398,
             Foreground = Brushes.White,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
             Margin = new Thickness(0, 0, 0, shortEdge * 0.005),
-            RenderTransformOrigin = new Point(0.5, 0.5),
-            RenderTransform = new ScaleTransform(0.95, 1.0)
+            RenderTransformOrigin = new Point(0.0, 0.5),
+            RenderTransform = new ScaleTransform(1.045, 1.0)
         };
 
         TextBlock line2 = new TextBlock
@@ -482,25 +482,29 @@ public static class RenderingService
             Text = BuildSignatureLine2(ctx),
             FontFamily = new FontFamily("Bahnschrift"),
             FontWeight = FontWeights.SemiBold,
-            FontSize = shortEdge * 0.0174,
+            FontSize = shortEdge * 0.01835,
             Foreground = Brushes.White,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
-            Margin = new Thickness(0, 0, 0, shortEdge * 0.009)
+            Margin = new Thickness(0, 0, 0, shortEdge * 0.009),
+            RenderTransformOrigin = new Point(0.0, 0.5),
+            RenderTransform = new ScaleTransform(1.028, 1.0)
         };
 
         StackPanel line3 = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            RenderTransformOrigin = new Point(0.0, 0.5),
+            RenderTransform = new ScaleTransform(1.028, 1.0)
         };
 
         TextBlock line3OpenQuote = new TextBlock
         {
             Text = "\u201C",
             FontFamily = new FontFamily("SimSun"),
-            FontSize = shortEdge * 0.0175,
+            FontSize = shortEdge * 0.01835,
             Foreground = Brushes.White,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -509,7 +513,7 @@ public static class RenderingService
         {
             Text = SignatureLine3Body,
             FontFamily = new FontFamily("Microsoft YaHei"),
-            FontSize = shortEdge * 0.0172,
+            FontSize = shortEdge * 0.01815,
             Foreground = Brushes.White,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -518,7 +522,7 @@ public static class RenderingService
         {
             Text = "\u201D",
             FontFamily = new FontFamily("SimSun"),
-            FontSize = shortEdge * 0.0175,
+            FontSize = shortEdge * 0.01835,
             Foreground = Brushes.White,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -528,7 +532,7 @@ public static class RenderingService
         {
             Text = location,
             FontFamily = new FontFamily("Microsoft YaHei"),
-            FontSize = shortEdge * 0.0172,
+            FontSize = shortEdge * 0.01815,
             Foreground = Brushes.White,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(shortEdge * 0.012, 0, 0, 0)
