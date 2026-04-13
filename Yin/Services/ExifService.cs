@@ -16,7 +16,15 @@ public static class ExifService
 {
     private static readonly string[] InvalidLocationTokens =
     {
-        "CELLID", "CELL", "LAC", "MCC", "MNC", "CID", "BASESTATION", "BTS"
+        "CELLID", "CELL", "LAC", "MCC", "MNC", "CID", "BASESTATION", "BTS",
+        "SOURCEAUTOCOMPUTED", "SOURCECOMPUTED", "AUTOCOMPUTED", "COMPUTED",
+        "SOURCEMANUAL", "SOURCEESTIMATED", "SOURCESETEXPLICITLY", "SETEXPLICITLY",
+        "EXPLICITLY", "DERIVED", "AUTOLOCATION", "LOCATIONSOURCE"
+    };
+
+    private static readonly string[] IgnoredLocationKeyTokens =
+    {
+        "Source", "Computed", "Derived", "Estimate", "Estimated", "Provider", "Method", "Reference"
     };
 
     private static readonly string[] LocationPriorityTokens =
@@ -195,6 +203,14 @@ public static class ExifService
             return false;
         }
 
+        foreach (string ignoredToken in IgnoredLocationKeyTokens)
+        {
+            if (key.IndexOf(ignoredToken, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return false;
+            }
+        }
+
         string normalized = key.Replace("-", "", StringComparison.OrdinalIgnoreCase);
         return normalized.IndexOf("location", StringComparison.OrdinalIgnoreCase) >= 0
                || normalized.IndexOf("city", StringComparison.OrdinalIgnoreCase) >= 0
@@ -253,6 +269,21 @@ public static class ExifService
             {
                 return true;
             }
+        }
+
+        if (compact.Contains("SOURCE", StringComparison.Ordinal) &&
+            (compact.Contains("COMPUTED", StringComparison.Ordinal)
+             || compact.Contains("MANUAL", StringComparison.Ordinal)
+             || compact.Contains("ESTIMATED", StringComparison.Ordinal)
+             || compact.Contains("EXPLICIT", StringComparison.Ordinal)))
+        {
+            return true;
+        }
+
+        if (compact.Contains("SET", StringComparison.Ordinal) &&
+            compact.Contains("EXPLICIT", StringComparison.Ordinal))
+        {
+            return true;
         }
 
         if (Regex.IsMatch(value, @"^(?:[A-Z]{2,}\d*|\d+[A-Z]*)$", RegexOptions.CultureInvariant))
