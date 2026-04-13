@@ -19,7 +19,7 @@ public static class RenderingService
     private const string SignatureFontFamilyPath = "./#方正字迹-周东芬草书 简";
     private const string SignatureFallbackFontFamily = "STXingkai";
     private const string SignatureLine1Text = "青山有思，白鹤忘机";
-    private const string SignatureLine3Prefix = "\u201C唯有通透处事，方能从容自在\u201D";
+    private const string SignatureLine3Body = "唯有通透处事，方能从容自在";
 
     /// <summary>
     /// 生成最终图像（包含边框、品牌/参数、阴影与圆角等）
@@ -427,9 +427,7 @@ public static class RenderingService
     private static string BuildSignatureLine3(RenderContext ctx)
     {
         string location = GetPreferredValue(ctx.Exif?.LocationText, ctx.TxtLocation).Trim();
-        return string.IsNullOrWhiteSpace(location)
-            ? SignatureLine3Prefix
-            : $"{SignatureLine3Prefix}\u3000{location}";
+        return location;
     }
 
     private static RenderTargetBitmap RenderSignatureWatermarkImage(RenderContext ctx)
@@ -466,25 +464,17 @@ public static class RenderingService
             Margin = new Thickness(0, 0, 0, bottomOffset)
         };
 
-        DropShadowEffect sharedGlow = new DropShadowEffect
-        {
-            Color = Colors.Black,
-            BlurRadius = shortEdge * 0.012,
-            ShadowDepth = 0,
-            Opacity = 0.85
-        };
-
         TextBlock line1 = new TextBlock
         {
             Text = SignatureLine1Text,
             FontFamily = GetSignatureFontFamily(),
-            FontSize = shortEdge * 0.036,
+            FontSize = shortEdge * 0.038,
             Foreground = Brushes.White,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
-            Margin = new Thickness(0, 0, 0, shortEdge * 0.006),
+            Margin = new Thickness(0, 0, 0, shortEdge * 0.005),
             RenderTransformOrigin = new Point(0.5, 0.5),
-            RenderTransform = new ScaleTransform(0.9, 1.0)
+            RenderTransform = new ScaleTransform(0.95, 1.0)
         };
 
         TextBlock line2 = new TextBlock
@@ -492,22 +482,65 @@ public static class RenderingService
             Text = BuildSignatureLine2(ctx),
             FontFamily = new FontFamily("Bahnschrift"),
             FontWeight = FontWeights.SemiBold,
-            FontSize = shortEdge * 0.017,
+            FontSize = shortEdge * 0.0174,
             Foreground = Brushes.White,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
             Margin = new Thickness(0, 0, 0, shortEdge * 0.009)
         };
 
-        TextBlock line3 = new TextBlock
+        StackPanel line3 = new StackPanel
         {
-            Text = BuildSignatureLine3(ctx),
-            FontFamily = new FontFamily("Microsoft YaHei"),
-            FontSize = shortEdge * 0.0168,
-            Foreground = Brushes.White,
+            Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Center,
-            TextAlignment = TextAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center
         };
+
+        TextBlock line3OpenQuote = new TextBlock
+        {
+            Text = "\u201C",
+            FontFamily = new FontFamily("SimSun"),
+            FontSize = shortEdge * 0.0175,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        TextBlock line3Body = new TextBlock
+        {
+            Text = SignatureLine3Body,
+            FontFamily = new FontFamily("Microsoft YaHei"),
+            FontSize = shortEdge * 0.0172,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        TextBlock line3CloseQuote = new TextBlock
+        {
+            Text = "\u201D",
+            FontFamily = new FontFamily("SimSun"),
+            FontSize = shortEdge * 0.0175,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        string location = BuildSignatureLine3(ctx);
+        TextBlock line3Location = new TextBlock
+        {
+            Text = location,
+            FontFamily = new FontFamily("Microsoft YaHei"),
+            FontSize = shortEdge * 0.0172,
+            Foreground = Brushes.White,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(shortEdge * 0.012, 0, 0, 0)
+        };
+
+        line3.Children.Add(line3OpenQuote);
+        line3.Children.Add(line3Body);
+        line3.Children.Add(line3CloseQuote);
+        if (!string.IsNullOrWhiteSpace(location))
+        {
+            line3.Children.Add(line3Location);
+        }
 
         signatureContainer.Children.Add(line1);
         signatureContainer.Children.Add(line2);
