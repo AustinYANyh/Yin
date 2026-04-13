@@ -573,6 +573,7 @@ public static class ExifService
 
     private static void WriteLocationDebugLog(string filePath, string debugText)
     {
+#if DEBUG
         try
         {
             string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -590,6 +591,7 @@ public static class ExifService
         {
             // Swallow logging errors to avoid breaking image loading.
         }
+#endif
     }
 
     private static void AddDistinctLocationPart(List<string> parts, string value)
