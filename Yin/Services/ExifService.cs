@@ -1,7 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Text.Json;
+using System.Threading.Tasks;
 using MetadataExtractor;
 using MetadataExtractor.Formats.Exif;
 using MetadataExtractor.Formats.Xmp;
@@ -14,6 +20,7 @@ namespace Yin.Services;
 /// </summary>
 public static class ExifService
 {
+    private static readonly HttpClient HttpClient = CreateHttpClient();
     private static readonly string[] InvalidLocationTokens =
     {
         "CELLID", "CELL", "LAC", "MCC", "MNC", "CID", "BASESTATION", "BTS",
@@ -39,14 +46,22 @@ public static class ExifService
     public static ExifInfo ReadExifData(string filePath)
     {
         var info = new ExifInfo();
+        List<string> debugLines = new()
+        {
+            $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ReadExifData",
+            $"File: {filePath}"
+        };
         try
         {
             var directories = ImageMetadataReader.ReadMetadata(filePath);
+            debugLines.Add($"DirectoryCount: {directories.Count}");
             var ifd0 = directories.OfType<ExifIfd0Directory>().FirstOrDefault();
             if (ifd0 != null)
             {
                 info.Make = ifd0.GetDescription(ExifIfd0Directory.TagMake) ?? "";
                 info.Model = ifd0.GetDescription(ExifIfd0Directory.TagModel) ?? "";
+                debugLines.Add($"IFD0 Make: {info.Make}");
+                debugLines.Add($"IFD0 Model: {info.Model}");
             }
             var subIfd = directories.OfType<ExifSubIfdDirectory>().FirstOrDefault();
             if (subIfd != null)
@@ -116,10 +131,11 @@ public static class ExifService
                 }
             }
 
-            PopulateLocationInfo(info, directories);
+            PopulateLocationInfo(info, directories, debugLines);
         }
         catch (Exception ex)
         {
+            debugLines.Add($"Metadata read error: {ex}");
             System.Diagnostics.Debug.WriteLine($"Metadata read error: {ex.Message}");
         }
         if (!string.IsNullOrEmpty(info.Make) && !string.IsNullOrEmpty(info.Model))
@@ -130,10 +146,181 @@ public static class ExifService
             }
         }
         if (string.IsNullOrEmpty(info.Make)) info.Make = string.Empty;
+        debugLines.Add($"Latitude: {info.Latitude?.ToString() ?? "<empty>"}");
+        debugLines.Add($"Longitude: {info.Longitude?.ToString() ?? "<empty>"}");
+        debugLines.Add($"LocationText after EXIF/XMP: {info.LocationText}");
+        info.LocationDebugLog = string.Join(Environment.NewLine, debugLines);
         return info;
     }
 
-    private static void PopulateLocationInfo(ExifInfo info, IEnumerable<MetadataExtractor.Directory> directories)
+    public static async Task<ExifInfo> ReadExifDataAsync(string filePath)
+    {
+        ExifInfo info = ReadExifData(filePath);
+        if (!string.IsNullOrWhiteSpace(info.LocationText) || !info.Latitude.HasValue || !info.Longitude.HasValue)
+        {
+            WriteLocationDebugLog(filePath, info.LocationDebugLog);
+            return info;
+        }
+
+        var reverse = await ReverseGeocodeAsync(info.Latitude.Value, info.Longitude.Value);
+        AppendLocationDebug(info, reverse.debugLog);
+        if (!string.IsNullOrWhiteSpace(reverse.location))
+        {
+            info.LocationText = reverse.location;
+            AppendLocationDebug(info, $"LocationText after reverse geocoding: {info.LocationText}");
+        }
+
+        WriteLocationDebugLog(filePath, info.LocationDebugLog);
+        return info;
+    }
+
+    private static HttpClient CreateHttpClient()
+    {
+        HttpClient client = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(6)
+        };
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Yin", "1.0"));
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("(reverse-geocoding)"));
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("zh-CN,zh;q=0.9,en;q=0.6");
+        return client;
+    }
+
+    private static async Task<(string? location, string debugLog)> ReverseGeocodeAsync(double latitude, double longitude)
+    {
+        StringBuilder debug = new();
+        try
+        {
+            string lat = latitude.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
+            string lon = longitude.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
+            string url = $"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}&zoom=10&addressdetails=1&layer=address";
+            debug.AppendLine($"ReverseGeocode URL: {url}");
+            using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
+            using HttpResponseMessage response = await HttpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                debug.AppendLine($"ReverseGeocode HTTP status: {(int)response.StatusCode} {response.StatusCode}");
+                return (null, debug.ToString());
+            }
+
+            string rawJson = await response.Content.ReadAsStringAsync();
+            debug.AppendLine($"ReverseGeocode Raw JSON: {rawJson}");
+            using JsonDocument doc = JsonDocument.Parse(rawJson);
+            if (!doc.RootElement.TryGetProperty("address", out JsonElement address))
+            {
+                debug.AppendLine("ReverseGeocode address: <missing>");
+                return (null, debug.ToString());
+            }
+
+            string displayName = "";
+            if (doc.RootElement.TryGetProperty("display_name", out JsonElement displayNameElement))
+            {
+                displayName = NormalizeLocationText(displayNameElement.GetString());
+            }
+
+            List<string> parts = new();
+            string state = ReadAddressPart(address, "state");
+            string province = ReadAddressPart(address, "province");
+            string city = ReadAddressPart(address, "city");
+            string municipality = ReadAddressPart(address, "municipality");
+            string stateDistrict = ReadAddressPart(address, "state_district");
+            string county = ReadAddressPart(address, "county");
+            string cityDistrict = ReadAddressPart(address, "city_district");
+            string town = ReadAddressPart(address, "town");
+            string suburb = ReadAddressPart(address, "suburb");
+            string displayNameCity = ExtractCityFromDisplayName(displayName);
+
+            if (LooksLikeDistrictLevel(city) && !string.IsNullOrWhiteSpace(displayNameCity))
+            {
+                city = displayNameCity;
+            }
+            else if (string.IsNullOrWhiteSpace(city) && !string.IsNullOrWhiteSpace(displayNameCity))
+            {
+                city = displayNameCity;
+            }
+
+            debug.AppendLine($"ReverseGeocode display_name: {displayName}");
+            debug.AppendLine($"ReverseGeocode derived city from display_name: {displayNameCity}");
+            debug.AppendLine($"ReverseGeocode address.state: {state}");
+            debug.AppendLine($"ReverseGeocode address.province: {province}");
+            debug.AppendLine($"ReverseGeocode address.city: {city}");
+            debug.AppendLine($"ReverseGeocode address.municipality: {municipality}");
+            debug.AppendLine($"ReverseGeocode address.state_district: {stateDistrict}");
+            debug.AppendLine($"ReverseGeocode address.county: {county}");
+            debug.AppendLine($"ReverseGeocode address.city_district: {cityDistrict}");
+            debug.AppendLine($"ReverseGeocode address.town: {town}");
+            debug.AppendLine($"ReverseGeocode address.suburb: {suburb}");
+
+            AddDistinctLocationPart(parts, state);
+            AddDistinctLocationPart(parts, province);
+            AddDistinctLocationPart(parts, city);
+            AddDistinctLocationPart(parts, municipality);
+            AddDistinctLocationPart(parts, stateDistrict);
+            if (parts.Count == 0)
+            {
+                AddDistinctLocationPart(parts, county);
+                AddDistinctLocationPart(parts, cityDistrict);
+                AddDistinctLocationPart(parts, town);
+                AddDistinctLocationPart(parts, suburb);
+            }
+
+            string result = string.Join(" ", parts);
+            debug.AppendLine($"ReverseGeocode result: {result}");
+            return (string.IsNullOrWhiteSpace(result) ? null : result, debug.ToString());
+        }
+        catch (Exception ex)
+        {
+            debug.AppendLine($"ReverseGeocode exception: {ex}");
+            return (null, debug.ToString());
+        }
+    }
+
+    private static string ReadAddressPart(JsonElement address, string propertyName)
+    {
+        if (!address.TryGetProperty(propertyName, out JsonElement valueElement))
+        {
+            return string.Empty;
+        }
+
+        return NormalizeLocationText(valueElement.GetString());
+    }
+
+    private static bool LooksLikeDistrictLevel(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return value.EndsWith("区", StringComparison.Ordinal)
+               || value.EndsWith("县", StringComparison.Ordinal)
+               || value.EndsWith("旗", StringComparison.Ordinal)
+               || value.EndsWith("镇", StringComparison.Ordinal)
+               || value.EndsWith("乡", StringComparison.Ordinal);
+    }
+
+    private static string ExtractCityFromDisplayName(string displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return string.Empty;
+        }
+
+        string[] parts = displayName
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        foreach (string part in parts)
+        {
+            if (part.EndsWith("市", StringComparison.Ordinal) && !part.Contains("省", StringComparison.Ordinal))
+            {
+                return part;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static void PopulateLocationInfo(ExifInfo info, IEnumerable<MetadataExtractor.Directory> directories, List<string> debugLines)
     {
         var gps = directories.OfType<GpsDirectory>().FirstOrDefault();
         if (gps != null)
@@ -141,15 +328,19 @@ public static class ExifService
             try
             {
                 var geo = gps.GetGeoLocation();
+                debugLines.Add($"GPS TagLatitude: {gps.GetDescription(GpsDirectory.TagLatitude)}");
+                debugLines.Add($"GPS TagLongitude: {gps.GetDescription(GpsDirectory.TagLongitude)}");
+                debugLines.Add($"GPS TagProcessingMethod: {gps.GetDescription(GpsDirectory.TagProcessingMethod)}");
                 if (geo != null && !geo.IsZero)
                 {
                     info.Latitude = geo.Latitude;
                     info.Longitude = geo.Longitude;
+                    debugLines.Add($"GPS GeoLocation parsed: {info.Latitude}, {info.Longitude}");
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore malformed GPS payloads and continue with textual location parsing.
+                debugLines.Add($"GPS parse exception: {ex.Message}");
             }
         }
 
@@ -173,14 +364,16 @@ public static class ExifService
                     continue;
                 }
 
+                debugLines.Add($"XMP location-ish key: {key} = {value}");
                 AddLocationCandidate(candidates, value, key);
             }
         }
 
-        string structuredLocation = BuildStructuredLocation(directories.OfType<XmpDirectory>());
+        string structuredLocation = BuildStructuredLocation(directories.OfType<XmpDirectory>(), debugLines);
         if (!string.IsNullOrWhiteSpace(structuredLocation))
         {
             info.LocationText = structuredLocation;
+            debugLines.Add($"Structured location selected: {structuredLocation}");
             return;
         }
 
@@ -193,6 +386,7 @@ public static class ExifService
         if (!string.IsNullOrWhiteSpace(best))
         {
             info.LocationText = best;
+            debugLines.Add($"Candidate location selected: {best}");
         }
     }
 
@@ -294,7 +488,7 @@ public static class ExifService
         return false;
     }
 
-    private static string BuildStructuredLocation(IEnumerable<XmpDirectory> directories)
+    private static string BuildStructuredLocation(IEnumerable<XmpDirectory> directories, List<string> debugLines)
     {
         string sublocation = "";
         string city = "";
@@ -318,6 +512,7 @@ public static class ExifService
                      || key.IndexOf("SubLocation", StringComparison.OrdinalIgnoreCase) >= 0))
                 {
                     sublocation = value;
+                    debugLines.Add($"Structured sublocation from {key}: {value}");
                     continue;
                 }
 
@@ -325,6 +520,7 @@ public static class ExifService
                     key.IndexOf("City", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     city = value;
+                    debugLines.Add($"Structured city from {key}: {value}");
                     continue;
                 }
 
@@ -335,6 +531,7 @@ public static class ExifService
                      || key.IndexOf("AdministrativeArea", StringComparison.OrdinalIgnoreCase) >= 0))
                 {
                     province = value;
+                    debugLines.Add($"Structured province from {key}: {value}");
                     continue;
                 }
 
@@ -342,6 +539,7 @@ public static class ExifService
                     key.IndexOf("Country", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     country = value;
+                    debugLines.Add($"Structured country from {key}: {value}");
                 }
             }
         }
@@ -359,6 +557,39 @@ public static class ExifService
         }
 
         return string.Join(" ", parts);
+    }
+
+    private static void AppendLocationDebug(ExifInfo info, string debugText)
+    {
+        if (string.IsNullOrWhiteSpace(debugText))
+        {
+            return;
+        }
+
+        info.LocationDebugLog = string.IsNullOrWhiteSpace(info.LocationDebugLog)
+            ? debugText
+            : $"{info.LocationDebugLog}{Environment.NewLine}{debugText}";
+    }
+
+    private static void WriteLocationDebugLog(string filePath, string debugText)
+    {
+        try
+        {
+            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            if (string.IsNullOrWhiteSpace(desktop))
+            {
+                return;
+            }
+
+            string logPath = Path.Combine(desktop, "Yin_location_debug.log");
+            File.AppendAllText(logPath,
+                $"{Environment.NewLine}=============================={Environment.NewLine}{debugText}{Environment.NewLine}",
+                Encoding.UTF8);
+        }
+        catch
+        {
+            // Swallow logging errors to avoid breaking image loading.
+        }
     }
 
     private static void AddDistinctLocationPart(List<string> parts, string value)

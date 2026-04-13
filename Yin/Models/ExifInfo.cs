@@ -27,6 +27,8 @@ public class ExifInfo
     public double? Latitude { get; set; }
     /// <summary>GPS 经度</summary>
     public double? Longitude { get; set; }
+    /// <summary>地点识别调试日志</summary>
+    public string LocationDebugLog { get; set; } = "";
     /// <summary>拍摄时间</summary>
     public DateTime DateTaken { get; set; }
 }

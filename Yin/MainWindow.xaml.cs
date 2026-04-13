@@ -1,6 +1,7 @@
 using Microsoft.Win32;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
@@ -776,7 +777,7 @@ public partial class MainWindow : Window
         SliderRightMargin.Value = SliderLeftMargin.Value;
     }
 
-    private void BtnOpen_Click(object sender, RoutedEventArgs e)
+    private async void BtnOpen_Click(object sender, RoutedEventArgs e)
     {
         OpenFileDialog openFileDialog = new OpenFileDialog
         {
@@ -785,11 +786,11 @@ public partial class MainWindow : Window
 
         if (openFileDialog.ShowDialog() == true)
         {
-            LoadImage(openFileDialog.FileName);
+            await LoadImageAsync(openFileDialog.FileName);
         }
     }
 
-    private void Image_Drop(object sender, DragEventArgs e)
+    private async void Image_Drop(object sender, DragEventArgs e)
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop))
         {
@@ -799,7 +800,7 @@ public partial class MainWindow : Window
         string[] files = (string[])e.Data.GetData(DataFormats.FileDrop);
         if (files.Length > 0)
         {
-            LoadImage(files[0]);
+            await LoadImageAsync(files[0]);
         }
     }
 
@@ -809,7 +810,7 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void LoadImage(string path)
+    private async Task LoadImageAsync(string path)
     {
         try
         {
@@ -824,7 +825,8 @@ public partial class MainWindow : Window
             bitmap.Freeze();
 
             _currentImage = bitmap;
-            _currentExif = ExifService.ReadExifData(path);
+            UpdateStatus("正在读取 EXIF / 地点...");
+            _currentExif = await ExifService.ReadExifDataAsync(path);
 
             if (_currentTemplate != null && (_currentTemplate.ReferenceShortEdge > 0 || _currentMode == RenderMode.Overlay))
             {
@@ -838,6 +840,11 @@ public partial class MainWindow : Window
         {
             MessageBox.Show($"Error loading image: {ex.Message}");
         }
+    }
+
+    private void UpdateStatus(string statusText)
+    {
+        TxtStatus.Text = statusText;
     }
 
     private void BtnUpdate_Click(object sender, RoutedEventArgs e)
