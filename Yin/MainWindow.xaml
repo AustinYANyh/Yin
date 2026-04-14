@@ -6,7 +6,8 @@
         xmlns:local="clr-namespace:Yin"
         mc:Ignorable="d"
         Title="Watermark Border Generator" Height="1050" Width="1300"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        Closing="Window_Closing">
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="300"/>
@@ -166,7 +167,9 @@
 
                                     <TextBlock Text="地点 (Location)" Margin="0,0,0,2"/>
                                     <TextBox x:Name="TxtLocation" Margin="0,0,0,5"/>
-                                    
+
+                                    <Button x:Name="BtnResetDefaults" Content="重置缺省值" Height="26" Margin="0,8,0,2" Click="BtnResetDefaults_Click"/>
+                                    <Button x:Name="BtnSaveDefaults" Content="保存缺省值" Height="26" Margin="0,0,0,5" Click="BtnSaveDefaults_Click"/>
                                     <TextBlock Text="说明：若无法读取EXIF，将使用上述值。" Foreground="Gray" FontSize="10" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Expander>

@@ -1,6 +1,7 @@
 using Microsoft.Win32;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -59,6 +60,23 @@ public partial class MainWindow : Window
     private string _currentFilePath = string.Empty;
     private ExifInfo? _currentExif;
 
+    private sealed class UserDefaults
+    {
+        public string Make { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string Lens { get; set; } = "";
+        public string Focal { get; set; } = "";
+        public string FNumber { get; set; } = "";
+        public string Shutter { get; set; } = "";
+        public string ISO { get; set; } = "";
+        public string Location { get; set; } = "";
+    }
+
+    private UserDefaults _userDefaults = new();
+    private static readonly string UserDefaultsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "Yin", "user_defaults.json");
+
     private readonly List<TemplateModel> _borderTemplates = new();
     private readonly List<TemplateModel> _overlayTemplates = new();
 
@@ -74,7 +92,55 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         InitializeTemplates();
+        LoadUserDefaults();
         InitializeMode();
+    }
+
+    private void LoadUserDefaults()
+    {
+        try
+        {
+            if (File.Exists(UserDefaultsPath))
+            {
+                string json = File.ReadAllText(UserDefaultsPath);
+                _userDefaults = JsonSerializer.Deserialize<UserDefaults>(json) ?? new UserDefaults();
+            }
+        }
+        catch
+        {
+            _userDefaults = new UserDefaults();
+        }
+    }
+
+    private void SaveUserDefaults()
+    {
+        try
+        {
+            _userDefaults.Make = TxtMake.Text;
+            _userDefaults.Model = TxtModel.Text;
+            _userDefaults.Lens = TxtLens.Text;
+            _userDefaults.Focal = TxtFocal.Text;
+            _userDefaults.FNumber = TxtFNumber.Text;
+            _userDefaults.Shutter = TxtShutter.Text;
+            _userDefaults.ISO = TxtISO.Text;
+            _userDefaults.Location = TxtLocation.Text;
+
+            Directory.CreateDirectory(Path.GetDirectoryName(UserDefaultsPath)!);
+            File.WriteAllText(UserDefaultsPath, JsonSerializer.Serialize(_userDefaults));
+        }
+        catch { }
+    }
+
+    private void ApplyUserDefaultsToUi()
+    {
+        TxtMake.Text = _userDefaults.Make;
+        TxtModel.Text = _userDefaults.Model;
+        TxtLens.Text = _userDefaults.Lens;
+        TxtFocal.Text = _userDefaults.Focal;
+        TxtFNumber.Text = _userDefaults.FNumber;
+        TxtShutter.Text = _userDefaults.Shutter;
+        TxtISO.Text = _userDefaults.ISO;
+        TxtLocation.Text = _userDefaults.Location;
     }
 
     private void InitializeTemplates()
@@ -451,7 +517,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ApplyTemplateValues(TemplateModel tmpl)
+    private void ApplyTemplateValues(TemplateModel tmpl, bool applyDefaults = true)
     {
         double factor = GetTemplateScaleFactor(tmpl);
 
@@ -479,14 +545,10 @@ public partial class MainWindow : Window
             ChkMarginPriority.IsChecked = tmpl.IsMarginPriority;
             ChkSmartAdaptation.IsChecked = _currentMode == RenderMode.Overlay ? true : tmpl.IsSmartAdaptation;
 
-            TxtMake.Text = tmpl.DefaultMake;
-            TxtModel.Text = tmpl.DefaultModel;
-            TxtLens.Text = tmpl.DefaultLens;
-            TxtFocal.Text = tmpl.DefaultFocal;
-            TxtFNumber.Text = tmpl.DefaultFNumber;
-            TxtShutter.Text = tmpl.DefaultShutter;
-            TxtISO.Text = tmpl.DefaultISO;
-            TxtLocation.Text = tmpl.DefaultLocation;
+            if (applyDefaults)
+            {
+                ApplyUserDefaultsToUi();
+            }
         }
         finally
         {
@@ -830,7 +892,7 @@ public partial class MainWindow : Window
 
             if (_currentTemplate != null && (_currentTemplate.ReferenceShortEdge > 0 || _currentMode == RenderMode.Overlay))
             {
-                ApplyTemplateValues(_currentTemplate);
+                ApplyTemplateValues(_currentTemplate, applyDefaults: false);
             }
 
             UpdatePreview();
@@ -853,6 +915,28 @@ public partial class MainWindow : Window
         {
             UpdatePreview();
         }
+    }
+
+    private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+    {
+    }
+
+    private void BtnSaveDefaults_Click(object sender, RoutedEventArgs e)
+    {
+        SaveUserDefaults();
+    }
+
+    private void BtnResetDefaults_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentTemplate == null) return;
+        TxtMake.Text = _currentTemplate.DefaultMake;
+        TxtModel.Text = _currentTemplate.DefaultModel;
+        TxtLens.Text = _currentTemplate.DefaultLens;
+        TxtFocal.Text = _currentTemplate.DefaultFocal;
+        TxtFNumber.Text = _currentTemplate.DefaultFNumber;
+        TxtShutter.Text = _currentTemplate.DefaultShutter;
+        TxtISO.Text = _currentTemplate.DefaultISO;
+        TxtLocation.Text = _currentTemplate.DefaultLocation;
     }
 
     private void UpdatePreview()
