@@ -18,6 +18,21 @@ public static class RenderingService
     private static readonly Uri SignatureFontBaseUri = new("pack://application:,,,/Yin;component/Source/", UriKind.Absolute);
     private const string SignatureFontFamilyPath = "./#方正字迹-周东芬草书 简";
     private const string SignatureFallbackFontFamily = "STXingkai";
+
+    private static readonly Dictionary<string, BitmapImage> _logoCache = new();
+
+    private static BitmapImage GetCachedLogo(string uriString)
+    {
+        if (_logoCache.TryGetValue(uriString, out var cached)) return cached;
+        var img = new BitmapImage();
+        img.BeginInit();
+        img.UriSource = new Uri(uriString);
+        img.CacheOption = BitmapCacheOption.OnLoad;
+        img.EndInit();
+        img.Freeze();
+        _logoCache[uriString] = img;
+        return img;
+    }
     private const string SignatureLine1Text = "青山有思，白鹤忘机";
     private const string SignatureLine3Body = "唯有通透处事，方能从容自在";
 
@@ -328,6 +343,8 @@ public static class RenderingService
         grid.Arrange(new Rect(0, 0, wBorder, hBorder));
         grid.UpdateLayout();
         double outScale = (ctx.OutputScale <= 0 || ctx.OutputScale > 1.0) ? 1.0 : ctx.OutputScale;
+        if (outScale < 1.0)
+            grid.LayoutTransform = new ScaleTransform(outScale, outScale);
         int outW = Math.Max(1, (int)Math.Round(wBorder * outScale));
         int outH = Math.Max(1, (int)Math.Round(hBorder * outScale));
         RenderTargetBitmap rtb = new RenderTargetBitmap(outW, outH, 96, 96, PixelFormats.Pbgra32);
@@ -555,7 +572,12 @@ public static class RenderingService
         grid.Arrange(new Rect(0, 0, width, height));
         grid.UpdateLayout();
 
-        RenderTargetBitmap rtb = new RenderTargetBitmap((int)width, (int)height, 96, 96, PixelFormats.Pbgra32);
+        double outScale = (ctx.OutputScale > 0 && ctx.OutputScale < 1.0) ? ctx.OutputScale : 1.0;
+        if (outScale < 1.0)
+            grid.LayoutTransform = new ScaleTransform(outScale, outScale);
+        int outW = Math.Max(1, (int)Math.Round(width * outScale));
+        int outH = Math.Max(1, (int)Math.Round(height * outScale));
+        RenderTargetBitmap rtb = new RenderTargetBitmap(outW, outH, 96, 96, PixelFormats.Pbgra32);
         rtb.Render(grid);
         return rtb;
     }
@@ -618,11 +640,7 @@ public static class RenderingService
             string resourcePath = $"pack://application:,,,/Yin;component/{ctx.Template.ForceLogoPath.Replace('\\', '/')}";
             try
             {
-                var logo = new BitmapImage();
-                logo.BeginInit();
-                logo.UriSource = new Uri(resourcePath);
-                logo.CacheOption = BitmapCacheOption.OnLoad;
-                logo.EndInit();
+                var logo = GetCachedLogo(resourcePath);
                 Image imgLogo = new Image
                 {
                     Source = logo,
@@ -650,11 +668,7 @@ public static class RenderingService
             string resourcePath = "pack://application:,,,/Yin;component/Source/Hasselblad.png";
             try
             {
-                var logo = new BitmapImage();
-                logo.BeginInit();
-                logo.UriSource = new Uri(resourcePath);
-                logo.CacheOption = BitmapCacheOption.OnLoad;
-                logo.EndInit();
+                var logo = GetCachedLogo(resourcePath);
                 Image imgLogo = new Image
                 {
                     Source = logo,
@@ -741,11 +755,7 @@ public static class RenderingService
                 try
                 {
                     string resourcePath = $"pack://application:,,,/Yin;component/{logoPath}";
-                    var logo = new BitmapImage();
-                    logo.BeginInit();
-                    logo.UriSource = new Uri(resourcePath);
-                    logo.CacheOption = BitmapCacheOption.OnLoad;
-                    logo.EndInit();
+                    var logo = GetCachedLogo(resourcePath);
                     ((Image)brandElement).Source = logo;
                 }
                 catch { }
@@ -932,7 +942,12 @@ public static class RenderingService
         grid.Measure(new Size(wBorder, hBorder));
         grid.Arrange(new Rect(0, 0, wBorder, hBorder));
         grid.UpdateLayout();
-        RenderTargetBitmap rtb = new RenderTargetBitmap((int)wBorder, (int)hBorder, 96, 96, PixelFormats.Pbgra32);
+        double outScale = (ctx.OutputScale > 0 && ctx.OutputScale < 1.0) ? ctx.OutputScale : 1.0;
+        if (outScale < 1.0)
+            grid.LayoutTransform = new ScaleTransform(outScale, outScale);
+        int outW = Math.Max(1, (int)Math.Round(wBorder * outScale));
+        int outH = Math.Max(1, (int)Math.Round(hBorder * outScale));
+        RenderTargetBitmap rtb = new RenderTargetBitmap(outW, outH, 96, 96, PixelFormats.Pbgra32);
         rtb.Render(grid);
         return rtb;
     }

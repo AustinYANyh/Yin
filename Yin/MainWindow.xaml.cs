@@ -2,9 +2,11 @@ using Microsoft.Win32;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Yin.Models;
 using Yin.Services;
@@ -57,6 +59,8 @@ public partial class MainWindow : Window
     }
 
     private BitmapImage? _currentImage;
+    private BitmapSource? _previewImage;
+    private CancellationTokenSource? _previewCts;
     private string _currentFilePath = string.Empty;
     private ExifInfo? _currentExif;
 
@@ -887,6 +891,7 @@ public partial class MainWindow : Window
             bitmap.Freeze();
 
             _currentImage = bitmap;
+            _previewImage = CreatePreviewThumbnail(bitmap, 1200);
             UpdateStatus("正在读取 EXIF / 地点...");
             _currentExif = await ExifService.ReadExifDataAsync(path);
 
@@ -939,15 +944,70 @@ public partial class MainWindow : Window
         TxtLocation.Text = _currentTemplate.DefaultLocation;
     }
 
-    private void UpdatePreview()
+    private async void UpdatePreview()
     {
-        if (_currentImage == null)
-        {
-            return;
-        }
+        if (_currentImage == null) return;
 
-        RenderContext ctx = CreateRenderContext();
-        ImgPreview.Source = RenderCurrentMode(ctx);
+        _previewCts?.Cancel();
+        _previewCts?.Dispose();
+        _previewCts = new CancellationTokenSource();
+        var cts = _previewCts;
+
+        UpdateStatus("渲染预览中...");
+
+        try
+        {
+            RenderContext ctx = CreatePreviewRenderContext();
+            RenderTargetBitmap? result = null;
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (!cts.IsCancellationRequested)
+                    result = RenderCurrentMode(ctx);
+            }, System.Windows.Threading.DispatcherPriority.Background, cts.Token);
+
+            if (!cts.IsCancellationRequested && result != null)
+                ImgPreview.Source = result;
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (!cts.IsCancellationRequested)
+                UpdateStatus();
+        }
+    }
+
+    private RenderContext CreatePreviewRenderContext()
+    {
+        var ctx = CreateRenderContext();
+        if (_previewImage != null && _currentImage != null)
+        {
+            double ratio = (double)_previewImage.PixelWidth / _currentImage.PixelWidth;
+            ctx.CurrentImage = _previewImage;
+            ctx.MarginTop    *= ratio;
+            ctx.MarginBottom *= ratio;
+            ctx.MarginLeft   *= ratio;
+            ctx.MarginRight  *= ratio;
+            ctx.CornerRadius *= ratio;
+            ctx.ShadowSize   *= ratio;
+            ctx.LogoOffsetY  *= ratio;
+            ctx.TextSpacing  *= ratio;
+        }
+        return ctx;
+    }
+
+    private static BitmapSource CreatePreviewThumbnail(BitmapSource source, int maxLongestEdge)
+    {
+        double longest = Math.Max(source.PixelWidth, source.PixelHeight);
+        if (longest <= maxLongestEdge) return source;
+        double scale = maxLongestEdge / longest;
+        var tb = new TransformedBitmap();
+        tb.BeginInit();
+        tb.Source = source;
+        tb.Transform = new ScaleTransform(scale, scale);
+        tb.EndInit();
+        tb.Freeze();
+        return tb;
     }
 
     private void BtnSave_Click(object sender, RoutedEventArgs e)
