@@ -183,7 +183,7 @@
         </Border>
 
         <!-- Right Area: Tab between single preview and batch -->
-        <TabControl Grid.Column="1">
+        <TabControl Grid.Column="1" SelectedIndex="1">
 
             <!-- Single Preview Tab -->
             <TabItem Header="单张预览">
@@ -260,6 +260,14 @@
                         <ListBox x:Name="LstBatchLog" BorderBrush="#CCC" Background="White" FontSize="12"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  FontFamily="Consolas">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Focusable" Value="False"/>
+                                    <Setter Property="IsHitTestVisible" Value="False"/>
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="Margin" Value="0"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <TextBlock Text="{Binding}" TextWrapping="Wrap"/>
