@@ -10,6 +10,12 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Yin.Models;
 using Yin.Services;
+using DataFormats = System.Windows.DataFormats;
+using DragDropEffects = System.Windows.DragDropEffects;
+using DragEventArgs = System.Windows.DragEventArgs;
+using MessageBox = System.Windows.MessageBox;
+using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
+using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
 
 namespace Yin;
 
@@ -63,6 +69,9 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _previewCts;
     private string _currentFilePath = string.Empty;
     private ExifInfo? _currentExif;
+
+    private CancellationTokenSource? _batchCts;
+    private readonly List<string> _batchFiles = new();
 
     private sealed class UserDefaults
     {
@@ -1048,5 +1057,349 @@ public partial class MainWindow : Window
         {
             MessageBox.Show($"Error saving: {ex.Message}");
         }
+    }
+
+    // ── Batch Processing ────────────────────────────────────────────────────
+
+    private void BtnBatchAddFiles_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Multiselect = true,
+            Filter = "图片文件|*.jpg;*.jpeg;*.png;*.tiff;*.tif"
+        };
+        if (dlg.ShowDialog() != true) return;
+        AddBatchFiles(dlg.FileNames);
+    }
+
+    private void LstBatchFiles_Drop(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetData(DataFormats.FileDrop) is string[] files)
+            AddBatchFiles(files);
+    }
+
+    private void AddBatchFiles(IEnumerable<string> paths)
+    {
+        foreach (string p in paths)
+        {
+            if (!_batchFiles.Contains(p))
+                _batchFiles.Add(p);
+        }
+        RefreshBatchFileList();
+    }
+
+    private void RefreshBatchFileList()
+    {
+        LstBatchFiles.Items.Clear();
+        foreach (string p in _batchFiles)
+            LstBatchFiles.Items.Add(Path.GetFileName(p));
+        TxtBatchCount.Text = $"共 {_batchFiles.Count} 张";
+    }
+
+    private void BtnBatchClear_Click(object sender, RoutedEventArgs e)
+    {
+        _batchFiles.Clear();
+        RefreshBatchFileList();
+    }
+
+    private void BtnBatchSelectDir_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "选择输出目录"
+        };
+        if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            TxtBatchOutputDir.Text = dlg.SelectedPath;
+    }
+
+    private async void BtnBatchStart_Click(object sender, RoutedEventArgs e)
+    {
+        if (_batchFiles.Count == 0)
+        {
+            MessageBox.Show("请先添加待处理文件。");
+            return;
+        }
+        string outputDir = TxtBatchOutputDir.Text.Trim();
+        if (string.IsNullOrEmpty(outputDir) || !Directory.Exists(outputDir))
+        {
+            MessageBox.Show("请选择有效的输出目录。");
+            return;
+        }
+
+        _batchCts = new CancellationTokenSource();
+        BtnBatchStart.IsEnabled = false;
+        BtnBatchStop.IsEnabled = true;
+        LstBatchLog.Items.Clear();
+        PrgBatch.Value = 0;
+        TxtBatchProgress.Text = $"0 / {_batchFiles.Count}";
+
+        try
+        {
+            await RunBatchAsync(_batchFiles.ToList(), outputDir, _batchCts.Token);
+            AppendBatchLog($"── 完成 {_batchFiles.Count} 张 ──");
+        }
+        catch (OperationCanceledException)
+        {
+            AppendBatchLog("── 已停止 ──");
+        }
+        finally
+        {
+            BtnBatchStart.IsEnabled = true;
+            BtnBatchStop.IsEnabled = false;
+            _batchCts.Dispose();
+            _batchCts = null;
+        }
+    }
+
+    private void BtnBatchStop_Click(object sender, RoutedEventArgs e)
+    {
+        _batchCts?.Cancel();
+    }
+
+    private async Task RunBatchAsync(
+        IReadOnlyList<string> files,
+        string outputDir,
+        CancellationToken ct)
+    {
+        for (int i = 0; i < files.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            string path = files[i];
+            TxtBatchProgress.Text = $"{i} / {files.Count}  {Path.GetFileName(path)}";
+            PrgBatch.Value = (double)i / files.Count * 100;
+
+            try
+            {
+                ExifInfo? exif = null;
+                try { exif = await ExifService.ReadExifDataAsync(path); }
+                catch { }
+
+                RenderTargetBitmap? rtb = null;
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    BitmapSource img = LoadBitmapFrozen(path);
+                    RenderContext ctx = ComputeBatchRenderContext(img, exif);
+                    rtb = RenderCurrentMode(ctx);
+                }, System.Windows.Threading.DispatcherPriority.Background, ct);
+
+                string outPath = BuildBatchOutputPath(outputDir, path);
+                byte[] jpegBytes = EncodeJpeg(rtb!);
+                await Task.Run(() => File.WriteAllBytes(outPath, jpegBytes), ct);
+
+                AppendBatchLog($"✓  {Path.GetFileName(path)}");
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                AppendBatchLog($"✗  {Path.GetFileName(path)}  ({ex.Message})");
+            }
+        }
+
+        TxtBatchProgress.Text = $"{files.Count} / {files.Count}";
+        PrgBatch.Value = 100;
+    }
+
+    private static BitmapSource LoadBitmapFrozen(string path)
+    {
+        // Load exactly like the single-image path: BitmapImage with OnLoad cache.
+        // Must be called on an STA thread (UI thread or Task.Run with STA).
+        var bitmap = new BitmapImage();
+        bitmap.BeginInit();
+        bitmap.UriSource = new Uri(path);
+        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+        bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat | BitmapCreateOptions.IgnoreColorProfile;
+        bitmap.EndInit();
+        bitmap.Freeze();
+        return bitmap;
+    }
+
+    /// <summary>
+    /// Computes a RenderContext for a batch image by replicating exactly what
+    /// ApplyTemplateValues + ApplyBorderTemplateTweaks + CreateRenderContext does
+    /// for the single-image path, but for an arbitrary image size.
+    /// </summary>
+    private RenderContext ComputeBatchRenderContext(BitmapSource img, ExifInfo? exif)
+    {
+        TemplateModel? tmpl = _currentTemplate;
+
+        double scalePercent = tmpl?.Scale ?? SliderScale.Value;
+        bool isMarginPriority = tmpl?.IsMarginPriority ?? (ChkMarginPriority.IsChecked == true);
+        bool isSmartAdaptation = _currentMode == RenderMode.Overlay
+            ? true
+            : (tmpl?.IsSmartAdaptation ?? (ChkSmartAdaptation.IsChecked == true));
+        LayoutMode layout = tmpl?.Layout ?? _currentLayout;
+
+        double marginTop, marginBottom, marginLeft, marginRight;
+        double cornerRadius, shadowSize, textSpacing, logoOffsetY;
+
+        if (tmpl != null && tmpl.ReferenceShortEdge > 0)
+        {
+            double shortEdge = Math.Min(img.PixelWidth, img.PixelHeight);
+            double factor = Math.Clamp(shortEdge / tmpl.ReferenceShortEdge, 0.1, 10.0);
+
+            marginTop    = tmpl.MarginTop    * factor;
+            marginBottom = tmpl.MarginBottom * factor;
+            marginLeft   = tmpl.MarginLeft   * factor;
+            marginRight  = tmpl.MarginRight  * factor;
+            cornerRadius = tmpl.Corner       * factor;
+            shadowSize   = tmpl.Shadow       * factor;
+            textSpacing  = tmpl.Spacing      * factor;
+            logoOffsetY  = tmpl.LogoOffsetY  * factor;
+
+            // Clamp to slider ranges, same as ApplyTemplateValues does via ClampToSliderRange
+            marginTop    = Math.Clamp(marginTop,    SliderTopMargin.Minimum,    SliderTopMargin.Maximum);
+            marginBottom = Math.Clamp(marginBottom, SliderBottomMargin.Minimum, SliderBottomMargin.Maximum);
+            marginLeft   = Math.Clamp(marginLeft,   SliderLeftMargin.Minimum,   SliderLeftMargin.Maximum);
+            marginRight  = Math.Clamp(marginRight,  SliderRightMargin.Minimum,  SliderRightMargin.Maximum);
+            cornerRadius = Math.Clamp(cornerRadius, SliderCorner.Minimum,       SliderCorner.Maximum);
+            shadowSize   = Math.Clamp(shadowSize,   SliderShadow.Minimum,       SliderShadow.Maximum);
+            textSpacing  = Math.Clamp(textSpacing,  SliderTextSpacing.Minimum,  SliderTextSpacing.Maximum);
+            logoOffsetY  = Math.Clamp(logoOffsetY,  SliderLogoOffsetY.Minimum,  SliderLogoOffsetY.Maximum);
+
+            if (_currentMode == RenderMode.Border)
+            {
+                // Mirror ApplyBorderTemplateTweaks exactly
+                ApplyTemplateTweaksToContext(
+                    img, tmpl,
+                    ref marginTop, ref marginBottom, ref marginLeft, ref marginRight, ref logoOffsetY);
+
+                // Re-clamp after tweaks (same as slider clamping in ApplyBorderTemplateTweaks)
+                marginTop    = Math.Clamp(marginTop,    SliderTopMargin.Minimum,    SliderTopMargin.Maximum);
+                marginBottom = Math.Clamp(marginBottom, SliderBottomMargin.Minimum, SliderBottomMargin.Maximum);
+                marginLeft   = Math.Clamp(marginLeft,   SliderLeftMargin.Minimum,   SliderLeftMargin.Maximum);
+                marginRight  = Math.Clamp(marginRight,  SliderRightMargin.Minimum,  SliderRightMargin.Maximum);
+                logoOffsetY  = Math.Clamp(logoOffsetY,  SliderLogoOffsetY.Minimum,  SliderLogoOffsetY.Maximum);
+            }
+            else if (_currentMode == RenderMode.Overlay)
+            {
+                // Mirror ApplyOverlayVisualDefaults
+                double refEdge = tmpl.ReferenceShortEdge > 0 ? tmpl.ReferenceShortEdge : DefaultOverlayStyleReferenceShortEdge;
+                double overlayFactor = Math.Clamp(shortEdge / refEdge, 0.35, 3.0);
+                double baseCorner = tmpl.Corner > 0 ? tmpl.Corner : DefaultOverlayCornerRadius;
+                double baseShadow = tmpl.Shadow > 0 ? tmpl.Shadow : DefaultOverlayShadowSize;
+                cornerRadius = Math.Clamp(Math.Round(baseCorner * overlayFactor), MinOverlayCornerRadius, MaxOverlayCornerRadius);
+                shadowSize   = Math.Clamp(Math.Round(baseShadow * overlayFactor), MinOverlayShadowSize,   MaxOverlayShadowSize);
+            }
+        }
+        else
+        {
+            // No reference edge — use current slider values as-is (same as single-image path)
+            marginTop    = SliderTopMargin.Value;
+            marginBottom = SliderBottomMargin.Value;
+            marginLeft   = SliderLeftMargin.Value;
+            marginRight  = SliderRightMargin.Value;
+            cornerRadius = SliderCorner.Value;
+            shadowSize   = SliderShadow.Value;
+            textSpacing  = SliderTextSpacing.Value;
+            logoOffsetY  = SliderLogoOffsetY.Value;
+        }
+
+        return new RenderContext
+        {
+            CurrentImage    = img,
+            Exif            = exif,
+            Template        = tmpl,
+            Layout          = layout,
+            IsMarginPriority  = isMarginPriority,
+            IsSmartAdaptation = isSmartAdaptation,
+            ScalePercent    = scalePercent,
+            MarginTop       = marginTop,
+            MarginBottom    = marginBottom,
+            MarginLeft      = marginLeft,
+            MarginRight     = marginRight,
+            CornerRadius    = cornerRadius,
+            ShadowSize      = shadowSize,
+            TextSpacing     = textSpacing,
+            LogoOffsetY     = logoOffsetY,
+            OutputScale     = 1.0,
+            TxtMake         = TxtMake.Text,
+            TxtModel        = TxtModel.Text,
+            TxtLens         = TxtLens.Text,
+            TxtFocal        = TxtFocal.Text,
+            TxtFNumber      = TxtFNumber.Text,
+            TxtShutter      = TxtShutter.Text,
+            TxtISO          = TxtISO.Text,
+            TxtLocation     = TxtLocation.Text
+        };
+    }
+
+    private static void ApplyTemplateTweaksToContext(
+        BitmapSource img, TemplateModel tmpl,
+        ref double marginTop, ref double marginBottom,
+        ref double marginLeft, ref double marginRight,
+        ref double logoOffsetY)
+    {
+        double wImg = img.PixelWidth;
+        double hImg = img.PixelHeight;
+
+        if (tmpl.Name == "哈苏水印边框")
+        {
+            marginTop    *= 1.5;
+            marginBottom *= 1.5;
+
+            double wBorderPred = wImg + marginLeft + marginRight;
+            double hBorderPred = hImg + marginTop  + marginBottom;
+            double refDim    = Math.Min(wBorderPred, hBorderPred);
+            double factorLogo = tmpl.ReferenceShortEdge > 0 ? refDim / tmpl.ReferenceShortEdge : 1.0;
+            double logoHeight = 32 * factorLogo;
+            double topMin     = logoHeight * 2.0 + 10;
+            double paramFont  = refDim * 0.018;
+            double bottomMin  = paramFont * 2.5 + 10;
+            double sideMin    = paramFont * 2.0;
+
+            marginTop    = Math.Max(marginTop,    topMin);
+            marginBottom = Math.Max(marginBottom, bottomMin);
+            double lr    = Math.Max(Math.Max(marginLeft, marginRight), sideMin);
+            marginLeft   = lr;
+            marginRight  = lr;
+        }
+
+        if (tmpl.Name == "哈苏水印居中")
+        {
+            double shortEdge  = Math.Min(wImg, hImg);
+            bool portrait     = hImg > wImg;
+            double edgeFactor = portrait ? 0.018 : 0.022;
+            double margin     = shortEdge * edgeFactor;
+            marginTop    = margin;
+            marginBottom = margin;
+            marginLeft   = margin;
+            marginRight  = margin;
+            logoOffsetY  = shortEdge * (portrait ? 0.035 : 0.030);
+        }
+
+        if (tmpl.Name == "签名水印")
+        {
+            double shortEdge = Math.Min(wImg, hImg);
+            double minBottom = Math.Clamp(shortEdge * 0.045, 36, 96);
+            marginTop   = 0;
+            marginLeft  = 0;
+            marginRight = 0;
+            marginBottom = Math.Max(marginBottom, minBottom);
+        }
+    }
+
+    private string BuildBatchOutputPath(string outputDir, string sourcePath)
+    {
+        string prefix = _currentMode == RenderMode.Border ? "Frame" : "Overlay";
+        string suffix = _currentTemplate?.Name ?? _currentLayout.ToString();
+        return Path.Combine(outputDir,
+            $"{prefix}_{Path.GetFileNameWithoutExtension(sourcePath)}_{suffix}.jpg");
+    }
+
+    private static byte[] EncodeJpeg(RenderTargetBitmap rtb)
+    {
+        var encoder = new JpegBitmapEncoder { QualityLevel = 100 };
+        encoder.Frames.Add(BitmapFrame.Create(rtb));
+        using var ms = new System.IO.MemoryStream();
+        encoder.Save(ms);
+        return ms.ToArray();
+    }
+
+    private void AppendBatchLog(string line)
+    {
+        LstBatchLog.Items.Add(line);
+        if (LstBatchLog.Items.Count > 0)
+            LstBatchLog.ScrollIntoView(LstBatchLog.Items[^1]);
     }
 }

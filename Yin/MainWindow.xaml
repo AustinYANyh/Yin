@@ -182,18 +182,86 @@
             </ScrollViewer>
         </Border>
 
-        <!-- Preview Area -->
-        <Border Grid.Column="1" Background="#333" AllowDrop="True" Drop="Image_Drop" DragOver="Image_DragOver">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                
-                <Image x:Name="ImgPreview" Margin="20" Stretch="Uniform"/>
-                
-                <TextBlock Grid.Row="1" x:Name="TxtStatus" Text="就绪" Foreground="White" Margin="10"/>
-            </Grid>
-        </Border>
+        <!-- Right Area: Tab between single preview and batch -->
+        <TabControl Grid.Column="1">
+
+            <!-- Single Preview Tab -->
+            <TabItem Header="单张预览">
+                <Border Background="#333" AllowDrop="True" Drop="Image_Drop" DragOver="Image_DragOver">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Image x:Name="ImgPreview" Margin="20" Stretch="Uniform"/>
+                        <TextBlock Grid.Row="1" x:Name="TxtStatus" Text="就绪" Foreground="White" Margin="10"/>
+                    </Grid>
+                </Border>
+            </TabItem>
+
+            <!-- Batch Processing Tab -->
+            <TabItem Header="批量处理">
+                <Grid Background="#F5F5F5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="260"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: File List -->
+                    <Border Grid.Column="0" Background="#EBEBEB" BorderBrush="#CCC" BorderThickness="0,0,1,0">
+                        <DockPanel Margin="12">
+                            <TextBlock DockPanel.Dock="Top" Text="待处理文件" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8"/>
+
+                            <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                                <TextBlock x:Name="TxtBatchCount" Text="共 0 张" Foreground="Gray" FontSize="11" Margin="0,0,0,8"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <Button x:Name="BtnBatchAddFiles" Content="添加文件" Height="28" Width="110" Click="BtnBatchAddFiles_Click" Margin="0,0,6,0"/>
+                                    <Button x:Name="BtnBatchClear" Content="清空" Height="28" Width="70" Click="BtnBatchClear_Click"/>
+                                </StackPanel>
+                                <Button x:Name="BtnBatchStart" Content="开始批量处理" Height="34" Background="#007ACC" Foreground="White" FontWeight="Bold" Click="BtnBatchStart_Click" Margin="0,0,0,4"/>
+                                <Button x:Name="BtnBatchStop" Content="停止" Height="28" IsEnabled="False" Click="BtnBatchStop_Click"/>
+                            </StackPanel>
+
+                            <ListBox x:Name="LstBatchFiles" AllowDrop="True" Drop="LstBatchFiles_Drop" DragOver="Image_DragOver"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     BorderThickness="1" BorderBrush="#CCC" Background="White"/>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Right: Output Dir + Progress + Log -->
+                    <DockPanel Grid.Column="1" Margin="16">
+
+                        <!-- Output Directory -->
+                        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+                            <TextBlock Text="输出目录" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,6"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="TxtBatchOutputDir" Grid.Column="0" Height="28" VerticalContentAlignment="Center" Padding="4,0" IsReadOnly="True" Background="#FFF" BorderBrush="#CCC"/>
+                                <Button x:Name="BtnBatchSelectDir" Grid.Column="1" Content="选择目录" Height="28" Width="80" Margin="6,0,0,0" Click="BtnBatchSelectDir_Click"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Progress -->
+                        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+                            <DockPanel Margin="0,0,0,4">
+                                <TextBlock Text="进度" FontWeight="SemiBold" FontSize="13"/>
+                                <TextBlock x:Name="TxtBatchProgress" Text="0 / 0" HorizontalAlignment="Right" DockPanel.Dock="Right" Foreground="Gray" FontSize="12"/>
+                            </DockPanel>
+                            <ProgressBar x:Name="PrgBatch" Height="14" Minimum="0" Maximum="100" Value="0"/>
+                        </StackPanel>
+
+                        <!-- Log -->
+                        <TextBlock DockPanel.Dock="Top" Text="处理日志" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,6"/>
+                        <ListBox x:Name="LstBatchLog" BorderBrush="#CCC" Background="White" FontSize="12"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 FontFamily="Consolas"/>
+                    </DockPanel>
+                </Grid>
+            </TabItem>
+
+        </TabControl>
     </Grid>
 </Window>

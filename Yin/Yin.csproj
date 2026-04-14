@@ -6,6 +6,7 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <UseWPF>true</UseWPF>
+        <UseWindowsForms>true</UseWindowsForms>
         <!-- 开启原生单文件发布 -->
         <PublishSingleFile>true</PublishSingleFile>
         <!-- 关键：不包含运行时，依赖系统已安装的 .NET 8 -->

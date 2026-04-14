@@ -7,6 +7,16 @@ using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using Yin.Models;
+using Brush = System.Windows.Media.Brush;
+using Brushes = System.Windows.Media.Brushes;
+using Color = System.Windows.Media.Color;
+using FontFamily = System.Windows.Media.FontFamily;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
+using Image = System.Windows.Controls.Image;
+using Orientation = System.Windows.Controls.Orientation;
+using Point = System.Windows.Point;
+using Rectangle = System.Windows.Shapes.Rectangle;
+using Size = System.Windows.Size;
 
 namespace Yin.Services;
 
