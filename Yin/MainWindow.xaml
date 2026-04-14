@@ -238,9 +238,11 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="TxtBatchOutputDir" Grid.Column="0" Height="28" VerticalContentAlignment="Center" Padding="4,0" IsReadOnly="True" Background="#FFF" BorderBrush="#CCC"/>
                                 <Button x:Name="BtnBatchSelectDir" Grid.Column="1" Content="选择目录" Height="28" Width="80" Margin="6,0,0,0" Click="BtnBatchSelectDir_Click"/>
+                                <Button x:Name="BtnBatchOpenDir" Grid.Column="2" Content="打开目录" Height="28" Width="80" Margin="6,0,0,0" Click="BtnBatchOpenDir_Click"/>
                             </Grid>
                         </StackPanel>
 
@@ -257,7 +259,13 @@
                         <TextBlock DockPanel.Dock="Top" Text="处理日志" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,6"/>
                         <ListBox x:Name="LstBatchLog" BorderBrush="#CCC" Background="White" FontSize="12"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 FontFamily="Consolas"/>
+                                 FontFamily="Consolas">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" TextWrapping="Wrap"/>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                     </DockPanel>
                 </Grid>
             </TabItem>

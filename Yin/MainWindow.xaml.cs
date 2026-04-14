@@ -1,4 +1,7 @@
 using Microsoft.Win32;
+using MetadataExtractor;
+using MetadataExtractor.Formats.Exif;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -11,6 +14,7 @@ using System.Windows.Media.Imaging;
 using Yin.Models;
 using Yin.Services;
 using DataFormats = System.Windows.DataFormats;
+using Directory = System.IO.Directory;
 using DragDropEffects = System.Windows.DragDropEffects;
 using DragEventArgs = System.Windows.DragEventArgs;
 using MessageBox = System.Windows.MessageBox;
@@ -64,7 +68,7 @@ public partial class MainWindow : Window
         public string TxtLocation { get; init; } = "";
     }
 
-    private BitmapImage? _currentImage;
+    private BitmapSource? _currentImage;
     private BitmapSource? _previewImage;
     private CancellationTokenSource? _previewCts;
     private string _currentFilePath = string.Empty;
@@ -72,6 +76,16 @@ public partial class MainWindow : Window
 
     private CancellationTokenSource? _batchCts;
     private readonly List<string> _batchFiles = new();
+
+    private sealed class BatchRunSummary
+    {
+        public int Total { get; init; }
+        public int Succeeded { get; set; }
+        public int Failed { get; set; }
+        public bool Canceled { get; set; }
+        public TimeSpan Elapsed { get; set; }
+        public int Processed => Succeeded + Failed;
+    }
 
     private sealed class UserDefaults
     {
@@ -83,6 +97,7 @@ public partial class MainWindow : Window
         public string Shutter { get; set; } = "";
         public string ISO { get; set; } = "";
         public string Location { get; set; } = "";
+        public string BatchOutputDir { get; set; } = "";
     }
 
     private UserDefaults _userDefaults = new();
@@ -137,6 +152,7 @@ public partial class MainWindow : Window
             _userDefaults.Shutter = TxtShutter.Text;
             _userDefaults.ISO = TxtISO.Text;
             _userDefaults.Location = TxtLocation.Text;
+            _userDefaults.BatchOutputDir = TxtBatchOutputDir.Text.Trim();
 
             Directory.CreateDirectory(Path.GetDirectoryName(UserDefaultsPath)!);
             File.WriteAllText(UserDefaultsPath, JsonSerializer.Serialize(_userDefaults));
@@ -154,6 +170,7 @@ public partial class MainWindow : Window
         TxtShutter.Text = _userDefaults.Shutter;
         TxtISO.Text = _userDefaults.ISO;
         TxtLocation.Text = _userDefaults.Location;
+        TxtBatchOutputDir.Text = GetPreferredBatchOutputDir();
     }
 
     private void InitializeTemplates()
@@ -309,6 +326,7 @@ public partial class MainWindow : Window
 
     private void InitializeMode()
     {
+        ApplyUserDefaultsToUi();
         _currentMode = RenderMode.Border;
         SwitchMode(RenderMode.Border, true);
         RadioModeBorder.IsChecked = true;
@@ -890,14 +908,7 @@ public partial class MainWindow : Window
         try
         {
             _currentFilePath = path;
-
-            BitmapImage bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.UriSource = new Uri(path);
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat | BitmapCreateOptions.IgnoreColorProfile;
-            bitmap.EndInit();
-            bitmap.Freeze();
+            BitmapSource bitmap = LoadBitmapFrozen(path);
 
             _currentImage = bitmap;
             _previewImage = CreatePreviewThumbnail(bitmap, 1200);
@@ -933,6 +944,7 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
+        SaveUserDefaults();
     }
 
     private void BtnSaveDefaults_Click(object sender, RoutedEventArgs e)
@@ -1109,7 +1121,25 @@ public partial class MainWindow : Window
             Description = "选择输出目录"
         };
         if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-            TxtBatchOutputDir.Text = dlg.SelectedPath;
+            SetBatchOutputDir(dlg.SelectedPath);
+    }
+
+    private void BtnBatchOpenDir_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string outputDir = EnsureBatchOutputDir();
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{outputDir}\"",
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"无法打开输出目录: {ex.Message}");
+        }
     }
 
     private async void BtnBatchStart_Click(object sender, RoutedEventArgs e)
@@ -1119,10 +1149,14 @@ public partial class MainWindow : Window
             MessageBox.Show("请先添加待处理文件。");
             return;
         }
-        string outputDir = TxtBatchOutputDir.Text.Trim();
-        if (string.IsNullOrEmpty(outputDir) || !Directory.Exists(outputDir))
+        string outputDir;
+        try
         {
-            MessageBox.Show("请选择有效的输出目录。");
+            outputDir = EnsureBatchOutputDir();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"输出目录不可用: {ex.Message}");
             return;
         }
 
@@ -1135,12 +1169,19 @@ public partial class MainWindow : Window
 
         try
         {
-            await RunBatchAsync(_batchFiles.ToList(), outputDir, _batchCts.Token);
-            AppendBatchLog($"── 完成 {_batchFiles.Count} 张 ──");
-        }
-        catch (OperationCanceledException)
-        {
-            AppendBatchLog("── 已停止 ──");
+            AppendBatchLog("── 批量处理开始 ──");
+            AppendBatchLog($"模式: {GetRenderModeDisplayName(_currentMode)} | 模板: {GetBatchTemplateDisplayName()} | 布局: {_currentLayout}");
+            AppendBatchLog($"输出目录: {outputDir}");
+            AppendBatchLog($"任务数量: {_batchFiles.Count}");
+            AppendBatchLog(
+                $"全局参数: 缩放 {SliderScale.Value:N0}% | 边距优先 {FormatBool(ChkMarginPriority.IsChecked == true)} | 智能适配 {FormatBool(ChkSmartAdaptation.IsChecked == true)}");
+            AppendBatchLog(
+                $"文本覆盖: Make={FormatLogValue(TxtMake.Text)} | Model={FormatLogValue(TxtModel.Text)} | Lens={FormatLogValue(TxtLens.Text)} | Focal={FormatLogValue(TxtFocal.Text)} | FNumber={FormatLogValue(TxtFNumber.Text)} | Shutter={FormatLogValue(TxtShutter.Text)} | ISO={FormatLogValue(TxtISO.Text)} | Location={FormatLogValue(TxtLocation.Text)}");
+
+            BatchRunSummary summary = await RunBatchAsync(_batchFiles.ToList(), outputDir, _batchCts.Token);
+            string action = summary.Canceled ? "已停止" : "完成";
+            AppendBatchLog(
+                $"── {action}：成功 {summary.Succeeded}，失败 {summary.Failed}，已处理 {summary.Processed}/{summary.Total}，耗时 {FormatElapsed(summary.Elapsed)} ──");
         }
         finally
         {
@@ -1156,48 +1197,89 @@ public partial class MainWindow : Window
         _batchCts?.Cancel();
     }
 
-    private async Task RunBatchAsync(
+    private async Task<BatchRunSummary> RunBatchAsync(
         IReadOnlyList<string> files,
         string outputDir,
         CancellationToken ct)
     {
-        for (int i = 0; i < files.Count; i++)
+        BatchRunSummary summary = new() { Total = files.Count };
+        Stopwatch batchStopwatch = Stopwatch.StartNew();
+
+        try
         {
-            ct.ThrowIfCancellationRequested();
-
-            string path = files[i];
-            TxtBatchProgress.Text = $"{i} / {files.Count}  {Path.GetFileName(path)}";
-            PrgBatch.Value = (double)i / files.Count * 100;
-
-            try
+            for (int i = 0; i < files.Count; i++)
             {
-                ExifInfo? exif = null;
-                try { exif = await ExifService.ReadExifDataAsync(path); }
-                catch { }
+                ct.ThrowIfCancellationRequested();
 
-                RenderTargetBitmap? rtb = null;
-                await Dispatcher.InvokeAsync(() =>
+                string path = files[i];
+                string fileName = Path.GetFileName(path);
+                Stopwatch fileStopwatch = Stopwatch.StartNew();
+
+                TxtBatchProgress.Text = $"{i} / {files.Count}  {fileName}";
+                PrgBatch.Value = (double)i / files.Count * 100;
+                AppendBatchLog($"[{i + 1}/{files.Count}] 开始处理: {fileName}");
+                AppendBatchLog($"    源文件: {path}");
+
+                try
                 {
-                    BitmapSource img = LoadBitmapFrozen(path);
-                    RenderContext ctx = ComputeBatchRenderContext(img, exif);
-                    rtb = RenderCurrentMode(ctx);
-                }, System.Windows.Threading.DispatcherPriority.Background, ct);
+                    ExifInfo? exif = null;
+                    try
+                    {
+                        exif = await ExifService.ReadExifDataAsync(path);
+                        AppendBatchLog($"    EXIF: {FormatExifLog(exif)}");
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendBatchLog($"    ! EXIF 读取失败: {ex.GetType().Name}: {ex.Message}");
+                    }
 
-                string outPath = BuildBatchOutputPath(outputDir, path);
-                byte[] jpegBytes = EncodeJpeg(rtb!);
-                await Task.Run(() => File.WriteAllBytes(outPath, jpegBytes), ct);
+                    RenderTargetBitmap? rtb = null;
+                    BitmapSource? img = null;
+                    RenderContext? ctx = null;
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        img = LoadBitmapFrozen(path);
+                        ctx = ComputeBatchRenderContext(img, exif);
+                        rtb = RenderCurrentMode(ctx);
+                    }, System.Windows.Threading.DispatcherPriority.Background, ct);
 
-                AppendBatchLog($"✓  {Path.GetFileName(path)}");
+                    AppendBatchLog($"    图像: {img!.PixelWidth}x{img.PixelHeight}");
+                    AppendBatchLog($"    渲染: {FormatRenderContextLog(ctx!)}");
+
+                    string outPath = BuildBatchOutputPath(outputDir, path);
+                    byte[] jpegBytes = EncodeJpeg(rtb!);
+                    await Task.Run(() => File.WriteAllBytes(outPath, jpegBytes), ct);
+
+                    AppendBatchLog($"    输出: {outPath}");
+                    AppendBatchLog($"    结果: {rtb.PixelWidth}x{rtb.PixelHeight} | {FormatFileSize(jpegBytes.Length)}");
+                    AppendBatchLog($"✓  {fileName} | 耗时 {FormatElapsed(fileStopwatch.Elapsed)}");
+                    summary.Succeeded++;
+                }
+                catch (OperationCanceledException)
+                {
+                    AppendBatchLog($"!  停止于: {fileName}");
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    AppendBatchLog($"✗  {fileName} | {ex.GetType().Name}: {ex.Message}");
+                    summary.Failed++;
+                }
             }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex)
-            {
-                AppendBatchLog($"✗  {Path.GetFileName(path)}  ({ex.Message})");
-            }
+        }
+        catch (OperationCanceledException)
+        {
+            summary.Canceled = true;
+        }
+        finally
+        {
+            batchStopwatch.Stop();
+            summary.Elapsed = batchStopwatch.Elapsed;
         }
 
         TxtBatchProgress.Text = $"{files.Count} / {files.Count}";
         PrgBatch.Value = 100;
+        return summary;
     }
 
     private static BitmapSource LoadBitmapFrozen(string path)
@@ -1211,7 +1293,48 @@ public partial class MainWindow : Window
         bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat | BitmapCreateOptions.IgnoreColorProfile;
         bitmap.EndInit();
         bitmap.Freeze();
-        return bitmap;
+        return ApplyExifOrientation(bitmap, path);
+    }
+
+    private static BitmapSource ApplyExifOrientation(BitmapSource bitmap, string path)
+    {
+        int orientation = ReadExifOrientation(path);
+        if (orientation is not (3 or 6 or 8))
+        {
+            return bitmap;
+        }
+
+        var transformed = new TransformedBitmap();
+        transformed.BeginInit();
+        transformed.Source = bitmap;
+        transformed.Transform = orientation switch
+        {
+            3 => new RotateTransform(180),
+            6 => new RotateTransform(90),
+            8 => new RotateTransform(270),
+            _ => Transform.Identity
+        };
+        transformed.EndInit();
+        transformed.Freeze();
+        return transformed;
+    }
+
+    private static int ReadExifOrientation(string path)
+    {
+        try
+        {
+            var ifd0 = ImageMetadataReader.ReadMetadata(path).OfType<ExifIfd0Directory>().FirstOrDefault();
+            if (ifd0 != null && ifd0.TryGetInt32(ExifIfd0Directory.TagOrientation, out int orientation))
+            {
+                return orientation;
+            }
+        }
+        catch
+        {
+            // Ignore EXIF orientation read failures and fall back to raw pixels.
+        }
+
+        return 1;
     }
 
     /// <summary>
@@ -1387,6 +1510,43 @@ public partial class MainWindow : Window
             $"{prefix}_{Path.GetFileNameWithoutExtension(sourcePath)}_{suffix}.jpg");
     }
 
+    private string GetPreferredBatchOutputDir()
+    {
+        return string.IsNullOrWhiteSpace(_userDefaults.BatchOutputDir)
+            ? GetDefaultBatchOutputDir()
+            : _userDefaults.BatchOutputDir;
+    }
+
+    private static string GetDefaultBatchOutputDir()
+    {
+        string pictures = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+        if (string.IsNullOrWhiteSpace(pictures))
+        {
+            pictures = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        }
+
+        return Path.Combine(pictures, "YinBatchOutput");
+    }
+
+    private void SetBatchOutputDir(string path)
+    {
+        TxtBatchOutputDir.Text = path.Trim();
+        SaveUserDefaults();
+    }
+
+    private string EnsureBatchOutputDir()
+    {
+        string outputDir = TxtBatchOutputDir.Text.Trim();
+        if (string.IsNullOrWhiteSpace(outputDir))
+        {
+            outputDir = GetPreferredBatchOutputDir();
+        }
+
+        Directory.CreateDirectory(outputDir);
+        SetBatchOutputDir(outputDir);
+        return outputDir;
+    }
+
     private static byte[] EncodeJpeg(RenderTargetBitmap rtb)
     {
         var encoder = new JpegBitmapEncoder { QualityLevel = 100 };
@@ -1401,5 +1561,74 @@ public partial class MainWindow : Window
         LstBatchLog.Items.Add(line);
         if (LstBatchLog.Items.Count > 0)
             LstBatchLog.ScrollIntoView(LstBatchLog.Items[^1]);
+    }
+
+    private static string GetRenderModeDisplayName(RenderMode mode)
+    {
+        return mode == RenderMode.Border ? "边框" : "Overlay";
+    }
+
+    private string GetBatchTemplateDisplayName()
+    {
+        return _currentTemplate?.Name ?? $"未选择模板({_currentLayout})";
+    }
+
+    private static string FormatBool(bool value)
+    {
+        return value ? "开" : "关";
+    }
+
+    private static string FormatLogValue(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "<空>" : value.Trim();
+    }
+
+    private static string FormatExifLog(ExifInfo? exif)
+    {
+        if (exif == null)
+        {
+            return "<无 EXIF>";
+        }
+
+        string dateTaken = exif.DateTaken == default ? "<空>" : exif.DateTaken.ToString("yyyy-MM-dd HH:mm:ss");
+        string gps = exif.Latitude.HasValue && exif.Longitude.HasValue
+            ? $"{exif.Latitude.Value:F6},{exif.Longitude.Value:F6}"
+            : "<空>";
+
+        return
+            $"Make={FormatLogValue(exif.Make)} | Model={FormatLogValue(exif.Model)} | Lens={FormatLogValue(exif.LensModel)} | Focal={FormatLogValue(exif.FocalLength)} | FNumber={FormatLogValue(exif.FNumber)} | Shutter={FormatLogValue(exif.ExposureTime)} | ISO={FormatLogValue(exif.ISOSpeed)} | DateTaken={dateTaken} | Location={FormatLogValue(exif.LocationText)} | GPS={gps}";
+    }
+
+    private string FormatRenderContextLog(RenderContext ctx)
+    {
+        string template = ctx.Template?.Name ?? "<无模板>";
+        return
+            $"模式={GetRenderModeDisplayName(_currentMode)} | 模板={template} | 布局={ctx.Layout} | 缩放={ctx.ScalePercent:N0}% | 边距优先={FormatBool(ctx.IsMarginPriority)} | 智能适配={FormatBool(ctx.IsSmartAdaptation)} | Margin(T/B/L/R)={ctx.MarginTop:N0}/{ctx.MarginBottom:N0}/{ctx.MarginLeft:N0}/{ctx.MarginRight:N0} | Corner={ctx.CornerRadius:N0} | Shadow={ctx.ShadowSize:N0} | Spacing={ctx.TextSpacing:N0} | LogoOffsetY={ctx.LogoOffsetY:N0}";
+    }
+
+    private static string FormatElapsed(TimeSpan elapsed)
+    {
+        if (elapsed.TotalSeconds < 1)
+        {
+            return $"{elapsed.TotalMilliseconds:N0} ms";
+        }
+
+        return $"{elapsed.TotalSeconds:N2} s";
+    }
+
+    private static string FormatFileSize(int bytes)
+    {
+        if (bytes < 1024)
+        {
+            return $"{bytes} B";
+        }
+
+        double kilobytes = bytes / 1024d;
+        if (kilobytes < 1024)
+        {
+            return $"{kilobytes:N1} KB";
+        }
+
+        return $"{kilobytes / 1024d:N2} MB";
     }
 }
