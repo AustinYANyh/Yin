@@ -418,29 +418,52 @@ public static class RenderingService
         return !string.IsNullOrWhiteSpace(exifValue) ? exifValue : (fallbackValue ?? "");
     }
 
-    private static string BuildSignatureLine2(RenderContext ctx)
+    private static string BuildCameraDisplayName(RenderContext ctx)
     {
+        string make = GetPreferredValue(ctx.Exif?.Make, ctx.TxtMake).Trim();
         string model = GetPreferredValue(ctx.Exif?.Model, ctx.TxtModel).Trim();
-        string lens = GetPreferredValue(ctx.Exif?.LensModel, ctx.TxtLens).Trim();
+
+        if (string.IsNullOrWhiteSpace(make) && string.IsNullOrWhiteSpace(model))
+        {
+            return "CAMERA";
+        }
+
+        if (string.IsNullOrWhiteSpace(make))
+        {
+            return model;
+        }
 
         if (string.IsNullOrWhiteSpace(model))
         {
-            model = "CAMERA";
+            return make;
         }
+
+        if (model.StartsWith(make, StringComparison.OrdinalIgnoreCase))
+        {
+            return model;
+        }
+
+        return $"{make} {model}";
+    }
+
+    private static string BuildSignatureLine2(RenderContext ctx)
+    {
+        string camera = BuildCameraDisplayName(ctx);
+        string lens = GetPreferredValue(ctx.Exif?.LensModel, ctx.TxtLens).Trim();
 
         if (string.IsNullOrWhiteSpace(lens))
         {
             lens = "LENS";
         }
 
-        if (!string.IsNullOrWhiteSpace(model) && !string.IsNullOrWhiteSpace(lens))
+        if (!string.IsNullOrWhiteSpace(camera) && !string.IsNullOrWhiteSpace(lens))
         {
-            return $"{model} | {lens}";
+            return $"{camera} | {lens}";
         }
 
-        if (!string.IsNullOrWhiteSpace(model))
+        if (!string.IsNullOrWhiteSpace(camera))
         {
-            return model;
+            return camera;
         }
 
         if (!string.IsNullOrWhiteSpace(lens))
