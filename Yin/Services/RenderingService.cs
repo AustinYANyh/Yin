@@ -25,7 +25,8 @@ namespace Yin.Services;
 /// </summary>
 public static class RenderingService
 {
-    private static readonly Uri SignatureFontBaseUri = new("pack://application:,,,/Yin;component/Source/", UriKind.Absolute);
+    private static readonly string ResourceAssemblyName = typeof(RenderingService).Assembly.GetName().Name ?? "Yin";
+    private static readonly Uri SignatureFontBaseUri = new($"pack://application:,,,/{ResourceAssemblyName};component/Source/", UriKind.Absolute);
     private const string SignatureFontFamilyPath = "./#方正字迹-周东芬草书 简";
     private const string SignatureFallbackFontFamily = "STXingkai";
 
@@ -670,7 +671,7 @@ public static class RenderingService
 
         if (ctx.Template != null && !string.IsNullOrEmpty(ctx.Template.ForceLogoPath))
         {
-            string resourcePath = $"pack://application:,,,/Yin;component/{ctx.Template.ForceLogoPath.Replace('\\', '/')}";
+            string resourcePath = GetPackResourceUri(ctx.Template.ForceLogoPath);
             try
             {
                 var logo = GetCachedLogo(resourcePath);
@@ -698,7 +699,7 @@ public static class RenderingService
 
         if (brandElement == null && brandText == "HASSELBLAD")
         {
-            string resourcePath = "pack://application:,,,/Yin;component/Source/Hasselblad.png";
+            string resourcePath = GetPackResourceUri("Source/Hasselblad.png");
             try
             {
                 var logo = GetCachedLogo(resourcePath);
@@ -787,7 +788,7 @@ public static class RenderingService
             {
                 try
                 {
-                    string resourcePath = $"pack://application:,,,/Yin;component/{logoPath}";
+                    string resourcePath = GetPackResourceUri(logoPath);
                     var logo = GetCachedLogo(resourcePath);
                     ((Image)brandElement).Source = logo;
                 }
@@ -983,5 +984,10 @@ public static class RenderingService
         RenderTargetBitmap rtb = new RenderTargetBitmap(outW, outH, 96, 96, PixelFormats.Pbgra32);
         rtb.Render(grid);
         return rtb;
+    }
+
+    private static string GetPackResourceUri(string resourcePath)
+    {
+        return $"pack://application:,,,/{ResourceAssemblyName};component/{resourcePath.Replace('\\', '/')}";
     }
 }

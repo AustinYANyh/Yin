@@ -1,0 +1,17 @@
+.idea/
+.vs/
+bin/
+obj/
+packages/
+publish/
+.claude/
+.dotnet/
+
+**/bin/
+**/obj/
+**/publish/
+**/.idea/
+
+*.user
+*.suo
+*.tmp

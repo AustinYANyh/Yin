@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yin 水印</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app">
+    <section class="workspace">
+      <form id="renderForm" class="panel">
+        <div class="topbar">
+          <div>
+            <h1>Yin 水印</h1>
+            <p id="status">上传图片，选择模板，生成 JPG</p>
+          </div>
+          <button id="submitButton" type="submit">生成</button>
+        </div>
+
+        <label class="upload">
+          <input id="imageInput" name="image" type="file" accept="image/jpeg,image/png,image/bmp" required>
+          <span id="fileName">选择图片</span>
+        </label>
+
+        <div class="grid two">
+          <label>
+            模式
+            <select id="mode" name="mode">
+              <option value="Border">边框</option>
+              <option value="Overlay">Overlay</option>
+            </select>
+          </label>
+          <label>
+            模板
+            <select id="templateName" name="templateName"></select>
+          </label>
+        </div>
+
+        <div class="grid">
+          <label>Make<input name="make" autocomplete="off"></label>
+          <label>Model<input name="model" autocomplete="off"></label>
+          <label>Lens<input name="lens" autocomplete="off"></label>
+          <label>Focal<input name="focal" autocomplete="off"></label>
+          <label>F Number<input name="fNumber" autocomplete="off"></label>
+          <label>Shutter<input name="shutter" autocomplete="off"></label>
+          <label>ISO<input name="iso" autocomplete="off"></label>
+          <label>Location<input name="location" autocomplete="off"></label>
+        </div>
+
+        <label class="password">
+          访问密码
+          <input id="password" type="password" autocomplete="current-password">
+        </label>
+      </form>
+
+      <section class="preview">
+        <img id="previewImage" alt="">
+        <a id="downloadLink" class="download" download>下载结果</a>
+      </section>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
