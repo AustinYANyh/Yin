@@ -66,6 +66,14 @@ public partial class MainWindow : Window
         public string TxtShutter { get; init; } = "";
         public string TxtISO { get; init; } = "";
         public string TxtLocation { get; init; } = "";
+        public bool UseDefaultMake { get; init; }
+        public bool UseDefaultModel { get; init; }
+        public bool UseDefaultLens { get; init; }
+        public bool UseDefaultFocal { get; init; }
+        public bool UseDefaultFNumber { get; init; }
+        public bool UseDefaultShutter { get; init; }
+        public bool UseDefaultISO { get; init; }
+        public bool UseDefaultLocation { get; init; }
     }
 
     private BitmapSource? _currentImage;
@@ -98,6 +106,15 @@ public partial class MainWindow : Window
         public string ISO { get; set; } = "";
         public string Location { get; set; } = "";
         public string BatchOutputDir { get; set; } = "";
+        public bool ForceDefaults { get; set; }
+        public bool UseDefaultMake { get; set; }
+        public bool UseDefaultModel { get; set; }
+        public bool UseDefaultLens { get; set; }
+        public bool UseDefaultFocal { get; set; }
+        public bool UseDefaultFNumber { get; set; }
+        public bool UseDefaultShutter { get; set; }
+        public bool UseDefaultISO { get; set; }
+        public bool UseDefaultLocation { get; set; }
     }
 
     private UserDefaults _userDefaults = new();
@@ -153,6 +170,14 @@ public partial class MainWindow : Window
             _userDefaults.ISO = TxtISO.Text;
             _userDefaults.Location = TxtLocation.Text;
             _userDefaults.BatchOutputDir = TxtBatchOutputDir.Text.Trim();
+            _userDefaults.UseDefaultMake = ChkDefaultMake.IsChecked == true;
+            _userDefaults.UseDefaultModel = ChkDefaultModel.IsChecked == true;
+            _userDefaults.UseDefaultLens = ChkDefaultLens.IsChecked == true;
+            _userDefaults.UseDefaultFocal = ChkDefaultFocal.IsChecked == true;
+            _userDefaults.UseDefaultFNumber = ChkDefaultFNumber.IsChecked == true;
+            _userDefaults.UseDefaultShutter = ChkDefaultShutter.IsChecked == true;
+            _userDefaults.UseDefaultISO = ChkDefaultISO.IsChecked == true;
+            _userDefaults.UseDefaultLocation = ChkDefaultLocation.IsChecked == true;
 
             Directory.CreateDirectory(Path.GetDirectoryName(UserDefaultsPath)!);
             File.WriteAllText(UserDefaultsPath, JsonSerializer.Serialize(_userDefaults));
@@ -171,6 +196,15 @@ public partial class MainWindow : Window
         TxtISO.Text = _userDefaults.ISO;
         TxtLocation.Text = _userDefaults.Location;
         TxtBatchOutputDir.Text = GetPreferredBatchOutputDir();
+        bool legacyForceDefaults = _userDefaults.ForceDefaults;
+        ChkDefaultMake.IsChecked = _userDefaults.UseDefaultMake || legacyForceDefaults;
+        ChkDefaultModel.IsChecked = _userDefaults.UseDefaultModel || legacyForceDefaults;
+        ChkDefaultLens.IsChecked = _userDefaults.UseDefaultLens || legacyForceDefaults;
+        ChkDefaultFocal.IsChecked = _userDefaults.UseDefaultFocal || legacyForceDefaults;
+        ChkDefaultFNumber.IsChecked = _userDefaults.UseDefaultFNumber || legacyForceDefaults;
+        ChkDefaultShutter.IsChecked = _userDefaults.UseDefaultShutter || legacyForceDefaults;
+        ChkDefaultISO.IsChecked = _userDefaults.UseDefaultISO || legacyForceDefaults;
+        ChkDefaultLocation.IsChecked = _userDefaults.UseDefaultLocation || legacyForceDefaults;
     }
 
     private void InitializeTemplates()
@@ -494,7 +528,15 @@ public partial class MainWindow : Window
             TxtFNumber = TxtFNumber.Text,
             TxtShutter = TxtShutter.Text,
             TxtISO = TxtISO.Text,
-            TxtLocation = TxtLocation.Text
+            TxtLocation = TxtLocation.Text,
+            UseDefaultMake = ChkDefaultMake.IsChecked == true,
+            UseDefaultModel = ChkDefaultModel.IsChecked == true,
+            UseDefaultLens = ChkDefaultLens.IsChecked == true,
+            UseDefaultFocal = ChkDefaultFocal.IsChecked == true,
+            UseDefaultFNumber = ChkDefaultFNumber.IsChecked == true,
+            UseDefaultShutter = ChkDefaultShutter.IsChecked == true,
+            UseDefaultISO = ChkDefaultISO.IsChecked == true,
+            UseDefaultLocation = ChkDefaultLocation.IsChecked == true
         };
     }
 
@@ -528,6 +570,14 @@ public partial class MainWindow : Window
             TxtShutter.Text = state.TxtShutter;
             TxtISO.Text = state.TxtISO;
             TxtLocation.Text = state.TxtLocation;
+            ChkDefaultMake.IsChecked = state.UseDefaultMake;
+            ChkDefaultModel.IsChecked = state.UseDefaultModel;
+            ChkDefaultLens.IsChecked = state.UseDefaultLens;
+            ChkDefaultFocal.IsChecked = state.UseDefaultFocal;
+            ChkDefaultFNumber.IsChecked = state.UseDefaultFNumber;
+            ChkDefaultShutter.IsChecked = state.UseDefaultShutter;
+            ChkDefaultISO.IsChecked = state.UseDefaultISO;
+            ChkDefaultLocation.IsChecked = state.UseDefaultLocation;
         }
         finally
         {
@@ -714,7 +764,7 @@ public partial class MainWindow : Window
         return new RenderContext
         {
             CurrentImage = _currentImage!,
-            Exif = _currentExif,
+            Exif = GetEffectiveExif(_currentExif),
             Template = _currentTemplate,
             Layout = _currentLayout,
             IsMarginPriority = ChkMarginPriority.IsChecked == true,
@@ -738,6 +788,30 @@ public partial class MainWindow : Window
             TxtISO = TxtISO.Text,
             TxtLocation = TxtLocation.Text
         };
+    }
+
+    private ExifInfo? GetEffectiveExif(ExifInfo? exif)
+    {
+        return new ExifInfo
+        {
+            Make = GetEffectiveExifValue(exif?.Make, TxtMake.Text, ChkDefaultMake.IsChecked == true),
+            Model = GetEffectiveExifValue(exif?.Model, TxtModel.Text, ChkDefaultModel.IsChecked == true),
+            LensModel = GetEffectiveExifValue(exif?.LensModel, TxtLens.Text, ChkDefaultLens.IsChecked == true),
+            FocalLength = GetEffectiveExifValue(exif?.FocalLength, TxtFocal.Text, ChkDefaultFocal.IsChecked == true),
+            FNumber = GetEffectiveExifValue(exif?.FNumber, TxtFNumber.Text, ChkDefaultFNumber.IsChecked == true),
+            ExposureTime = GetEffectiveExifValue(exif?.ExposureTime, TxtShutter.Text, ChkDefaultShutter.IsChecked == true),
+            ISOSpeed = GetEffectiveExifValue(exif?.ISOSpeed, TxtISO.Text, ChkDefaultISO.IsChecked == true),
+            LocationText = GetEffectiveExifValue(exif?.LocationText, TxtLocation.Text, ChkDefaultLocation.IsChecked == true),
+            Latitude = exif?.Latitude,
+            Longitude = exif?.Longitude,
+            LocationDebugLog = exif?.LocationDebugLog ?? "",
+            DateTaken = exif?.DateTaken ?? default
+        };
+    }
+
+    private static string GetEffectiveExifValue(string? exifValue, string defaultValue, bool useDefault)
+    {
+        return useDefault ? defaultValue : (exifValue ?? "");
     }
 
     private RenderTargetBitmap RenderCurrentMode(RenderContext ctx)
@@ -932,6 +1006,21 @@ public partial class MainWindow : Window
     private void UpdateStatus(string statusText)
     {
         TxtStatus.Text = statusText;
+    }
+
+    private void ChkDefaultField_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_isRestoringUi)
+        {
+            SaveCurrentModeState();
+        }
+
+        if (_currentImage != null)
+        {
+            UpdatePreview();
+        }
+
+        UpdateStatus();
     }
 
     private void BtnUpdate_Click(object sender, RoutedEventArgs e)
@@ -1421,7 +1510,7 @@ public partial class MainWindow : Window
         return new RenderContext
         {
             CurrentImage    = img,
-            Exif            = exif,
+            Exif            = GetEffectiveExif(exif),
             Template        = tmpl,
             Layout          = layout,
             IsMarginPriority  = isMarginPriority,

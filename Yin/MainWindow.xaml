@@ -126,14 +126,18 @@
                             <!-- Custom Text -->
                             <Expander Header="自定义参数 / 缺省值" Margin="0,15,0,0" IsExpanded="False">
                                 <StackPanel Margin="0,10,0,0">
+                                    <TextBlock Text="勾选字段使用缺省值；未勾选只使用 EXIF，读不到则留空。" Foreground="Gray" FontSize="10" TextWrapping="Wrap" Margin="0,0,0,10"/>
                                     <TextBlock Text="相机品牌 (Make)" Margin="0,0,0,2"/>
                                     <TextBox x:Name="TxtMake" Margin="0,0,0,5"/>
+                                    <CheckBox x:Name="ChkDefaultMake" Content="此项使用缺省值" Margin="0,-2,0,5" Checked="ChkDefaultField_Changed" Unchecked="ChkDefaultField_Changed"/>
                                     
                                     <TextBlock Text="相机型号 (Model)" Margin="0,0,0,2"/>
                                     <TextBox x:Name="TxtModel" Margin="0,0,0,5"/>
+                                    <CheckBox x:Name="ChkDefaultModel" Content="此项使用缺省值" Margin="0,-2,0,5" Checked="ChkDefaultField_Changed" Unchecked="ChkDefaultField_Changed"/>
                                     
                                     <TextBlock Text="镜头型号 (Lens)" Margin="0,0,0,2"/>
                                     <TextBox x:Name="TxtLens" Margin="0,0,0,5"/>
+                                    <CheckBox x:Name="ChkDefaultLens" Content="此项使用缺省值" Margin="0,-2,0,5" Checked="ChkDefaultField_Changed" Unchecked="ChkDefaultField_Changed"/>
                                     
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -143,10 +147,12 @@
                                         <StackPanel Grid.Column="0" Margin="0,0,5,0">
                                             <TextBlock Text="焦距 (Focal)" Margin="0,0,0,2"/>
                                             <TextBox x:Name="TxtFocal" Margin="0,0,0,5"/>
+                                            <CheckBox x:Name="ChkDefaultFocal" Content="用缺省" Margin="0,-2,0,5" Checked="ChkDefaultField_Changed" Unchecked="ChkDefaultField_Changed"/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Margin="5,0,0,0">
                                             <TextBlock Text="光圈 (F-Num)" Margin="0,0,0,2"/>
                                             <TextBox x:Name="TxtFNumber" Margin="0,0,0,5"/>
+                                            <CheckBox x:Name="ChkDefaultFNumber" Content="用缺省" Margin="0,-2,0,5" Checked="ChkDefaultField_Changed" Unchecked="ChkDefaultField_Changed"/>
                                         </StackPanel>
                                     </Grid>
                                     
@@ -158,15 +164,18 @@
                                         <StackPanel Grid.Column="0" Margin="0,0,5,0">
                                             <TextBlock Text="快门 (Shutter)" Margin="0,0,0,2"/>
                                             <TextBox x:Name="TxtShutter" Margin="0,0,0,5"/>
+                                            <CheckBox x:Name="ChkDefaultShutter" Content="用缺省" Margin="0,-2,0,5" Checked="ChkDefaultField_Changed" Unchecked="ChkDefaultField_Changed"/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Margin="5,0,0,0">
                                             <TextBlock Text="ISO" Margin="0,0,0,2"/>
                                             <TextBox x:Name="TxtISO" Margin="0,0,0,5"/>
+                                            <CheckBox x:Name="ChkDefaultISO" Content="用缺省" Margin="0,-2,0,5" Checked="ChkDefaultField_Changed" Unchecked="ChkDefaultField_Changed"/>
                                         </StackPanel>
                                     </Grid>
 
                                     <TextBlock Text="地点 (Location)" Margin="0,0,0,2"/>
                                     <TextBox x:Name="TxtLocation" Margin="0,0,0,5"/>
+                                    <CheckBox x:Name="ChkDefaultLocation" Content="此项使用缺省值" Margin="0,-2,0,5" Checked="ChkDefaultField_Changed" Unchecked="ChkDefaultField_Changed"/>
 
                                     <Button x:Name="BtnResetDefaults" Content="重置缺省值" Height="26" Margin="0,8,0,2" Click="BtnResetDefaults_Click"/>
                                     <Button x:Name="BtnSaveDefaults" Content="保存缺省值" Height="26" Margin="0,0,0,5" Click="BtnSaveDefaults_Click"/>

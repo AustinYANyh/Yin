@@ -661,7 +661,7 @@ public static class ExifService
         {
             string y = x.Trim();
             y = Regex.Replace(y, @"\s+", " ");
-            y = Regex.Replace(y, @"\bF\s*([0-9](?:\.[0-9]+)?)\b", m => $"f/{m.Groups[1].Value}", RegexOptions.IgnoreCase);
+            // y = Regex.Replace(y, @"\bF\s*([0-9](?:\.[0-9]+)?)\b", m => $"f/{m.Groups[1].Value}", RegexOptions.IgnoreCase);
             y = y.Replace(" II", " Ⅱ").Replace(" III", " Ⅲ").Replace(" IV", " Ⅳ");
             y = Regex.Replace(y, @"^SONY\s+", "", RegexOptions.IgnoreCase);
             return y;
