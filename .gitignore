@@ -6,10 +6,13 @@ packages/
 publish/
 .claude/
 .dotnet/
+.gradle/
+local.properties
 
 **/bin/
 **/obj/
 **/publish/
+**/build/
 **/.idea/
 
 *.user

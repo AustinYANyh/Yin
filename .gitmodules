@@ -1,0 +1,3 @@
+[submodule "Yin.Android"]
+	path = Yin.Android
+	url = https://github.com/AustinYANyh/Yin.Android.git
